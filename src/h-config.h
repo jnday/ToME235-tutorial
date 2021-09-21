@@ -32,24 +32,6 @@
 /* #define WINDOWS */
 #endif
 
-#ifdef USE_IBM
-
-  /*
-   * OPTION: Compile on an IBM (automatic)
-   */
-  #ifndef MSDOS
-    #define MSDOS
-  #endif
-
-
-  /* Use the new SVGA code */
-  #ifndef USE_IBM_SVGA
-    #define USE_IBM_SVGA
-  #endif
-
-
-#endif
-
 /*
  * OPTION: Compile on a SYS III version of UNIX
  */
@@ -130,15 +112,6 @@
 #endif
 
 /*
- * Extract the "ACORN" flag from the compiler
- */
-#ifdef __riscos
-# ifndef ACORN
-#  define ACORN
-# endif
-#endif
-
-/*
  * Extract the "SGI" flag from the compiler
  */
 #ifdef sgi
@@ -174,7 +147,7 @@
  * The only such platform that angband is ported to is currently
  * DEC Alpha AXP running OSF/1 (OpenVMS uses 32-bit longs).
  */
-#if defined(__alpha) && defined(__osf__) || defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__ia64) || defined(__ia64__) || defined(__mips64) || defined(__ppc64__) | defined(__PPC64__) | defined(__powerpc64__) || defined(__64BIT__) || defined(__sparc64__) || defined(__LP64__)
+#if defined(__alpha) && defined(__osf__) || defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__ia64) || defined(__ia64__) || defined(__mips64) || defined(__ppc64__) || defined(__PPC64__) || defined(__powerpc64__) || defined(__64BIT__) || defined(__sparc64__) || defined(__LP64__)
 # define L64
 #endif
 
@@ -192,8 +165,7 @@
  * or for the "Atari" platform which is Unix-like, apparently
  */
 #if !defined(MACINTOSH) && !defined(WINDOWS) && \
-    !defined(MSDOS) && !defined(USE_EMX) && \
-    !defined(AMIGA) && !defined(ACORN) && !defined(VM)
+    !defined(MSDOS)
 # define SET_UID
 #endif
 
@@ -221,8 +193,6 @@
  * for various other systems.  Note that any system that uses the
  * "period" as a separator (i.e. ACORN) will have to pretend that
  * it uses the slash, and do its own mapping of period <-> slash.
- * Note that the VM system uses a "flat" directory, and thus uses
- * the empty string for "PATH_SEP".
  */
 #undef PATH_SEP
 #define PATH_SEP "/"
@@ -234,21 +204,13 @@
 # undef PATH_SEP
 # define PATH_SEP "\\"
 #endif
-#if defined(MSDOS) || defined(OS2) || defined(USE_EMX)
+#if defined(MSDOS) || defined(OS2)
 # undef PATH_SEP
 # define PATH_SEP "\\"
-#endif
-#ifdef AMIGA
-# undef PATH_SEP
-# define PATH_SEP "/"
 #endif
 #ifdef __GO32__
 # undef PATH_SEP
 # define PATH_SEP "/"
-#endif
-#ifdef VM
-# undef PATH_SEP
-# define PATH_SEP ""
 #endif
 
 
@@ -307,12 +269,6 @@
      !defined(SGI) && !defined(ISC)
 #  define HAS_USLEEP
 # endif
-#endif
-
-#ifdef USE_IBM
-    #ifndef HAS_USLEEP
-    #define HAS_USLEEP /* Set for gcc (djgpp-v2), TY */
-    #endif
 #endif
 
 #endif

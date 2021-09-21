@@ -12,57 +12,7 @@
 
 #include "angband.h"
 
-/*
- * adds n flags to o_ptr chosen randomly from the masks f1..f4
- */
-#if 0
-static void enhance_random(object_type *o_ptr, int n, u32b f1, u32b f2, u32b f3, u32b f4)
-{
-	int counter = 0, null_mask;
-	u32b *f, *t, x;
-
-	while (n)
-	{
-		/* inefficient, but simple */
-		x = BIT(rand_int(32));
-		switch (randint(4))
-		{
-		case 1:
-			null_mask = TR1_NULL_MASK;
-			f = &f1;
-			t = &o_ptr->art_flags1;
-			break;
-		case 2:
-			null_mask = TR2_NULL_MASK;
-			f = &f2;
-			t = &o_ptr->art_flags2;
-			break;
-		case 3:
-			null_mask = TR3_NULL_MASK;
-			f = &f3;
-			t = &o_ptr->art_flags3;
-			break;
-		case 4:
-			null_mask = TR4_NULL_MASK;
-			f = &f4;
-			t = &o_ptr->art_flags4;
-			break;
-		default:
-			null_mask = 0;
-			f = t = NULL;
-			return;
-		}
-		if (++counter > 10000) break;
-		if (x & null_mask) continue;
-		if (!(x & *f)) continue;
-		if (x & *t) continue;
-		/* success */
-		*f &= ~x;
-		*t |= x;
-		n--;
-	}
-}
-#endif
+#include "spell_type.h"
 
 /*
  * Calculate the player's total inventory weight.
@@ -1252,7 +1202,7 @@ s32b object_value_real(object_type *o_ptr)
 	if (f5 & TR5_SPELL_CONTAIN)
 	{
 		if (o_ptr->pval2 != -1)
-			value += 5000 + 500 * school_spells[o_ptr->pval2].skill_level;
+			value += 5000 + 500 * spell_type_skill_level(spell_at(o_ptr->pval2));
 		else
 			value += 5000;
 	}
@@ -1283,10 +1233,6 @@ s32b object_value_real(object_type *o_ptr)
 	case TV_TRAPKIT:
 	case TV_INSTRUMENT:
 		{
-#if 0 /* DG - no */
-			/* Hack -- Negative "pval" is always bad */
-			if (o_ptr->pval < 0) return (0L);
-#endif
 			/* No pval */
 			if (!o_ptr->pval) break;
 
@@ -1338,7 +1284,7 @@ s32b object_value_real(object_type *o_ptr)
 	case TV_WAND:
 		{
 			/* Par for the spell */
-			value *= school_spells[o_ptr->pval2].skill_level;
+			value *= spell_type_skill_level(spell_at(o_ptr->pval2));
 			/* Take the average of the base and max spell levels */
 			value *= (((o_ptr->pval3 >> 16) & 0xFFFF) + (o_ptr->pval3 & 0xFFFF)) / 2;
 			/* Hack */
@@ -1353,7 +1299,7 @@ s32b object_value_real(object_type *o_ptr)
 	case TV_STAFF:
 		{
 			/* Par for the spell */
-			value *= school_spells[o_ptr->pval2].skill_level;
+			value *= spell_type_skill_level(spell_at(o_ptr->pval2));
 			/* Take the average of the base and max spell levels */
 			value *= (((o_ptr->pval3 >> 16) & 0xFFFF) + (o_ptr->pval3 & 0xFFFF)) / 2;
 			/* Hack */
@@ -1370,7 +1316,7 @@ s32b object_value_real(object_type *o_ptr)
 			if (o_ptr->sval == 255)
 			{
 				/* Pay extra for the spell */
-				value = value * school_spells[o_ptr->pval].skill_level;
+				value = value * spell_type_skill_level(spell_at(o_ptr->pval));
 			}
 			/* Done */
 			break;
@@ -1559,7 +1505,7 @@ s32b object_value(object_type *o_ptr)
  *
  * Chests, and activatable items, never stack (for various reasons).
  */
-bool object_similar(object_type *o_ptr, object_type *j_ptr)
+bool_ object_similar(object_type *o_ptr, object_type *j_ptr)
 {
 	int total = o_ptr->number + j_ptr->number;
 	u32b f1, f2, f3, f4, f5, esp, f11, f12, f13, f14, esp1, f15;
@@ -1805,15 +1751,6 @@ bool object_similar(object_type *o_ptr, object_type *j_ptr)
 
 			/* Require identical "artifact" names */
 			if (o_ptr->name1 != j_ptr->name1) return (FALSE);
-
-			/* Random artifacts never stack */
-			/*
-			    I don't see why these shouldn't stack.
-				-- wilh
-			*/
-#if 0
-			if (o_ptr->art_name || j_ptr->art_name) return (FALSE);
-#endif
 
 			/* Require identical "ego-item" names */
 			if (o_ptr->name2 != j_ptr->name2) return (FALSE);
@@ -2124,7 +2061,7 @@ static void finalize_randart(object_type* o_ptr, int lev)
 	int r;
 	int i = 0;
 	int foo = lev + randnor(0, 5);
-	bool flag = TRUE;
+	bool_ flag = TRUE;
 
 	/* Paranoia */
 	if (o_ptr->tval != TV_RANDART) return;
@@ -2196,7 +2133,7 @@ static void object_mention(object_type *o_ptr)
 
 void random_artifact_resistance(object_type * o_ptr)
 {
-	bool give_resistance = FALSE, give_power = FALSE;
+	bool_ give_resistance = FALSE, give_power = FALSE;
 
 	switch (o_ptr->name1)
 	{
@@ -2285,7 +2222,7 @@ void random_artifact_resistance(object_type * o_ptr)
  *
  * Note -- see "make_artifact()" and "apply_magic()"
  */
-static bool make_artifact_special(object_type *o_ptr)
+static bool_ make_artifact_special(object_type *o_ptr)
 {
 	int i;
 	int k_idx = 0;
@@ -2309,7 +2246,7 @@ static bool make_artifact_special(object_type *o_ptr)
 		if (!(a_ptr->flags3 & TR3_INSTA_ART)) continue;
 
 		/* Cannot generate some artifacts because they can only exists in special dungeons/quests/... */
-		if ((a_ptr->flags4 & TR4_SPECIAL_GENE) && (!a_allow_special[i]) && (!vanilla_town)) continue;
+		if ((a_ptr->flags4 & TR4_SPECIAL_GENE) && (!a_allow_special[i])) continue;
 
 		/* XXX XXX Enforce minimum "depth" (loosely) */
 		if (a_ptr->level > dun_level)
@@ -2369,7 +2306,7 @@ static bool make_artifact_special(object_type *o_ptr)
  *
  * Note -- see "make_artifact_special()" and "apply_magic()"
  */
-static bool make_artifact(object_type *o_ptr)
+static bool_ make_artifact(object_type *o_ptr)
 {
 	int i;
 	u32b f1, f2, f3, f4, f5, esp;
@@ -2396,7 +2333,7 @@ static bool make_artifact(object_type *o_ptr)
 		if (a_ptr->flags3 & TR3_INSTA_ART) continue;
 
 		/* Cannot generate some artifacts because they can only exists in special dungeons/quests/... */
-		if ((a_ptr->flags4 & TR4_SPECIAL_GENE) && (!a_allow_special[i]) && (!vanilla_town)) continue;
+		if ((a_ptr->flags4 & TR4_SPECIAL_GENE) && (!a_allow_special[i])) continue;
 
 		/* Must have the correct fields */
 		if (a_ptr->tval != o_ptr->tval) continue;
@@ -2444,11 +2381,11 @@ static bool make_artifact(object_type *o_ptr)
  *
  * This routine should only be called by "apply_magic()"
  */
-static bool make_ego_item(object_type *o_ptr, bool good)
+static bool_ make_ego_item(object_type *o_ptr, bool_ good)
 {
 	int i = 0, j;
 	int *ok_ego, ok_num = 0;
-	bool ret = FALSE;
+	bool_ ret = FALSE;
 	object_kind *k_ptr = &k_info[o_ptr->k_idx];
 
 	if (artifact_p(o_ptr) || o_ptr->name2) return (FALSE);
@@ -2459,7 +2396,7 @@ static bool make_ego_item(object_type *o_ptr, bool good)
 	for (i = 0; i < max_e_idx; i++)
 	{
 		ego_item_type *e_ptr = &e_info[i];
-		bool ok = FALSE;
+		bool_ ok = FALSE;
 
 		/* Skip "empty" items */
 		if (!e_ptr->name) continue;
@@ -2600,7 +2537,8 @@ static bool make_ego_item(object_type *o_ptr, bool good)
  */
 void charge_stick(object_type *o_ptr)
 {
-	o_ptr->pval = exec_lua(format("return get_stick_charges(%d)", o_ptr->pval2));
+	spell_type *spell = spell_at(o_ptr->pval2);
+	o_ptr->pval = spell_type_roll_charges(spell);
 }
 
 /*
@@ -2826,9 +2764,7 @@ static void a_m_aux_2(object_type *o_ptr, int level, int power)
 				o_ptr->pval = randint(4);        /* No cursed elven cloaks...? */
 			else if (o_ptr->sval == SV_MIMIC_CLOAK)
 			{
-				s32b mimic;
-
-				call_lua("find_random_mimic_shape", "(d,d)", "d", level, TRUE, &mimic);
+				s32b mimic = find_random_mimic_shape(level, TRUE);
 				o_ptr->pval2 = mimic;
 			}
 			break;
@@ -3291,6 +3227,74 @@ static void a_m_aux_3(object_type *o_ptr, int level, int power)
 	}
 }
 
+/*
+ * Get a spell for a given stick(wand, staff, rod)
+ */
+long get_random_stick(byte tval, int level)
+{
+	int tries;
+
+	for (tries = 0; tries < 1000; tries++)
+	{
+		long spell_idx = rand_int(school_spells_count);
+		spell_type *spell = spell_at(spell_idx);
+		device_allocation *device_allocation = spell_type_device_allocation(spell, tval);
+
+		if ((device_allocation != NULL) &&
+		    (rand_int(spell_type_skill_level(spell) * 3) < level) &&
+		    (magik(100 - device_allocation->rarity)))
+		{
+			return spell_idx;
+		}
+	}
+
+	return -1;
+}
+
+
+/*
+ * Randomized level
+ */
+static int randomized_level_in_range(range_type *range, int level)
+{
+	s32b r = range->max - range->min;
+
+	/* The basic idea is to have a max possible level of half the dungeon level */
+	if (r * 2 > level)
+	{
+		r = level / 2;
+	}
+
+	/* Randomize a bit */
+	r = m_bonus(r, dun_level);
+
+	/* get the result */
+	return range->min + r;
+}
+
+
+/*
+ * Get a random base level
+ */
+static int get_stick_base_level(byte tval, int level, int spl)
+{
+	spell_type *spell = spell_at(spl);
+	device_allocation *device_allocation = spell_type_device_allocation(spell, tval);
+	assert(device_allocation != NULL);
+	return randomized_level_in_range(&device_allocation->base_level, level);
+}
+
+/*
+ * Get a random max level
+ */
+static int get_stick_max_level(byte tval, int level, int spl)
+{
+	spell_type *spell = spell_at(spl);
+	device_allocation *device_allocation = spell_type_device_allocation(spell, tval);
+	assert(device_allocation != NULL);
+	return randomized_level_in_range(&device_allocation->max_level, level);
+}
+
 
 /*
  * Apply magic to an item known to be "boring"
@@ -3330,9 +3334,13 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 
 				/* Only random ones */
 				if (magik(75))
-					i = exec_lua(format("return get_random_spell(SKILL_MAGIC, %d)", level));
+				{
+					i = get_random_spell(SKILL_MAGIC, level);
+				}
 				else
-					i = exec_lua(format("return get_random_spell(SKILL_SPIRITUALITY, %d)", level));
+				{
+					i = get_random_spell(SKILL_SPIRITUALITY, level);
+				}
 
 				/* Use globe of light(or the first one) */
 				if (i == -1)
@@ -3377,7 +3385,7 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 			/* Hack -- choose a monster */
 			monster_race* r_ptr;
 			int r_idx, count = 0;
-			bool OK = FALSE;
+			bool_ OK = FALSE;
 
 			while ((!OK) && (count < 1000))
 			{
@@ -3426,9 +3434,12 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 			/* Decide the spell, pval == -1 means to bypass spell selection */
 			if (o_ptr->pval != -1)
 			{
-				int spl = exec_lua("return get_random_stick(TV_WAND, dun_level)");
+				int spl = get_random_stick(TV_WAND, dun_level);
 
-				if (spl == -1) spl = exec_lua("return find_spell('Manathrust')");
+				if (spl == -1)
+				{
+					spl = MANATHRUST;
+				}
 
 				o_ptr->pval2 = spl;
 			}
@@ -3439,8 +3450,8 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 			}
 
 			/* Ok now get a base level */
-			call_lua("get_stick_base_level", "(d,d,d)", "d", TV_WAND, dun_level, o_ptr->pval2, &bonus_lvl);
-			call_lua("get_stick_max_level", "(d,d,d)", "d", TV_WAND, dun_level, o_ptr->pval2, &max_lvl);
+			bonus_lvl = get_stick_base_level(TV_WAND, dun_level, o_ptr->pval2);
+			max_lvl = get_stick_max_level(TV_WAND, dun_level, o_ptr->pval2);
 			o_ptr->pval3 = (max_lvl << 16) + (bonus_lvl & 0xFFFF);
 
 			/* Hack -- charge wands */
@@ -3454,9 +3465,12 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 			/* Decide the spell, pval == -1 means to bypass spell selection */
 			if (o_ptr->pval != -1)
 			{
-				int spl = exec_lua("return get_random_stick(TV_STAFF, dun_level)");
+				int spl = get_random_stick(TV_STAFF, dun_level);
 
-				if (spl == -1) spl = exec_lua("return find_spell('Globe of Light')");
+				if (spl == -1)
+				{
+					spl = GLOBELIGHT;
+				}
 
 				o_ptr->pval2 = spl;
 			}
@@ -3467,8 +3481,8 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 			}
 
 			/* Ok now get a base level */
-			call_lua("get_stick_base_level", "(d,d,d)", "d", TV_STAFF, dun_level, o_ptr->pval2, &bonus_lvl);
-			call_lua("get_stick_max_level", "(d,d,d)", "d", TV_STAFF, dun_level, o_ptr->pval2, &max_lvl);
+			bonus_lvl = get_stick_base_level(TV_STAFF, dun_level, o_ptr->pval2);
+			max_lvl = get_stick_max_level(TV_STAFF, dun_level, o_ptr->pval2);
 			o_ptr->pval3 = (max_lvl << 16) + (bonus_lvl & 0xFFFF);
 
 			/* Hack -- charge staffs */
@@ -3502,9 +3516,7 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 	case TV_POTION2:
 		if (o_ptr->sval == SV_POTION2_MIMIC)
 		{
-			s32b mimic;
-
-			call_lua("find_random_mimic_shape", "(d,d)", "d", level, FALSE, &mimic);
+			s32b mimic = find_random_mimic_shape(level, FALSE);
 			o_ptr->pval2 = mimic;
 		}
 		break;
@@ -3540,14 +3552,6 @@ static void a_m_aux_4(object_type *o_ptr, int level, int power)
 
 	case TV_TOOL:
 		{
-			/* Hack - set the weight of portable holes */
-#if 0 /* DGDGDGDG -- use a skill */
-			if ((o_ptr->sval == SV_PORTABLE_HOLE) &&
-			                (cp_ptr->magic_key == MKEY_TELEKINESIS))
-			{
-				o_ptr->weight = portable_hole_weight();
-			}
-#endif
 			break;
 		}
 
@@ -3571,7 +3575,7 @@ void trap_hack(object_type *o_ptr)
 }
 
 /* Add a random glag to the ego item */
-void add_random_ego_flag(object_type *o_ptr, int fego, bool *limit_blows)
+void add_random_ego_flag(object_type *o_ptr, int fego, bool_ *limit_blows)
 {
 	if (fego & ETR4_SUSTAIN)
 	{
@@ -4007,7 +4011,7 @@ void add_random_ego_flag(object_type *o_ptr, int fego, bool *limit_blows)
  * true, then the item gets 3 extra "attempts" to become an artifact.
  */
 int hack_apply_magic_power = 0;
-void apply_magic(object_type *o_ptr, int lev, bool okay, bool good, bool great)
+void apply_magic(object_type *o_ptr, int lev, bool_ okay, bool_ good, bool_ great)
 {
 	int i, rolls, f1, f2, power;
 	object_kind *k_ptr = &k_info[o_ptr->k_idx];
@@ -4052,8 +4056,8 @@ void apply_magic(object_type *o_ptr, int lev, bool okay, bool good, bool great)
 				}
 
 				/* Determine a base and a max level */
-				call_lua("get_stick_base_level", "(d,d,d)", "d", o_ptr->tval, dun_level, o_ptr->pval2, &base_lvl);
-				call_lua("get_stick_max_level", "(d,d,d)", "d", o_ptr->tval, dun_level, o_ptr->pval2, &max_lvl);
+				base_lvl = get_stick_base_level(o_ptr->tval, dun_level, o_ptr->pval2);
+				max_lvl = get_stick_max_level(o_ptr->tval, dun_level, o_ptr->pval2);
 				o_ptr->pval3 = (max_lvl << 16) + (base_lvl & 0xFFFF);
 
 				/* Hack -- charge wands */
@@ -4245,15 +4249,7 @@ void apply_magic(object_type *o_ptr, int lev, bool okay, bool good, bool great)
 	case TV_GLOVES:
 	case TV_BOOTS:
 		{
-#if 0
-			if (power ||
-			                ((o_ptr->tval == TV_HELM) && (o_ptr->sval == SV_DRAGON_HELM)) ||
-			                ((o_ptr->tval == TV_SHIELD) && (o_ptr->sval == SV_DRAGON_SHIELD)) ||
-			                ((o_ptr->tval == TV_CLOAK) && (o_ptr->sval == SV_ELVEN_CLOAK)))
-				a_m_aux_2(o_ptr, lev, power);
-#else
 			a_m_aux_2(o_ptr, lev, power);
-#endif
 			break;
 		}
 
@@ -4279,7 +4275,7 @@ void apply_magic(object_type *o_ptr, int lev, bool okay, bool good, bool great)
 	{
 		ego_item_type *e_ptr;
 		int j;
-		bool limit_blows = FALSE;
+		bool_ limit_blows = FALSE;
 		u32b f1, f2, f3, f4, f5, esp;
 		s16b e_idx;
 
@@ -4432,7 +4428,7 @@ void init_match_theme(obj_theme theme)
 /*
  * Ditto XXX XXX XXX
  */
-static bool theme_changed(obj_theme theme)
+static bool_ theme_changed(obj_theme theme)
 {
 	/* Any of the themes has been changed */
 	if (theme.treasure != match_theme.treasure) return (TRUE);
@@ -4448,7 +4444,7 @@ static bool theme_changed(obj_theme theme)
 /*
  * Maga-Hack -- match certain types of object only.
  */
-bool kind_is_theme(int k_idx)
+bool_ kind_is_theme(int k_idx)
 {
 	object_kind *k_ptr = &k_info[k_idx];
 
@@ -4642,7 +4638,7 @@ bool kind_is_theme(int k_idx)
  * Determine if an object must not be generated.
  */
 int kind_is_legal_special = -1;
-bool kind_is_legal(int k_idx)
+bool_ kind_is_legal(int k_idx)
 {
 	object_kind *k_ptr = &k_info[k_idx];
 
@@ -4689,7 +4685,7 @@ bool kind_is_legal(int k_idx)
 /*
  * Hack -- determine if a template is "good"
  */
-bool kind_is_good(int k_idx)
+bool_ kind_is_good(int k_idx)
 {
 	object_kind *k_ptr = &k_info[k_idx];
 
@@ -4786,7 +4782,7 @@ bool kind_is_good(int k_idx)
 /*
 * Determine if template is suitable for building a randart -- dsb
 */
-bool kind_is_artifactable(int k_idx)
+bool_ kind_is_artifactable(int k_idx)
 {
 	int i, j;
 	object_kind *k_ptr = &k_info[k_idx];
@@ -4829,7 +4825,7 @@ bool kind_is_artifactable(int k_idx)
  * through the forge--object_prep()--apply_magic() sequence and
  * get_obj_num() should never be called for that purpose XXX XXX XXX
  */
-bool make_object(object_type *j_ptr, bool good, bool great, obj_theme theme)
+bool_ make_object(object_type *j_ptr, bool_ good, bool_ great, obj_theme theme)
 {
 	int invprob, base;
 
@@ -4946,7 +4942,7 @@ bool make_object(object_type *j_ptr, bool good, bool great, obj_theme theme)
  *
  * This routine requires a clean floor grid destination.
  */
-void place_object(int y, int x, bool good, bool great, int where)
+void place_object(int y, int x, bool_ good, bool_ great, int where)
 {
 	s16b o_idx;
 
@@ -5058,7 +5054,7 @@ void place_object(int y, int x, bool good, bool great, int where)
  *
  * The location must be a legal, clean, floor grid.
  */
-bool make_gold(object_type *j_ptr)
+bool_ make_gold(object_type *j_ptr)
 {
 	int i;
 
@@ -5195,10 +5191,10 @@ s16b drop_near(object_type *j_ptr, int chance, int y, int x)
 
 	char o_name[80];
 
-	bool flag = FALSE;
-	bool done = FALSE;
+	bool_ flag = FALSE;
+	bool_ done = FALSE;
 
-	bool plural = FALSE;
+	bool_ plural = FALSE;
 
 
 	/* Extract plural */
@@ -5239,7 +5235,7 @@ s16b drop_near(object_type *j_ptr, int chance, int y, int x)
 		/* Scan local grids */
 		for (dx = -3; dx <= 3; dx++)
 		{
-			bool comb = FALSE;
+			bool_ comb = FALSE;
 
 			/* Calculate actual distance */
 			d = (dy * dy) + (dx * dx);
@@ -5487,7 +5483,7 @@ s16b drop_near(object_type *j_ptr, int chance, int y, int x)
 /*
  * Scatter some "great" objects near the player
  */
-void acquirement(int y1, int x1, int num, bool great, bool known)
+void acquirement(int y1, int x1, int num, bool_ great, bool_ known)
 {
 	object_type *i_ptr;
 	object_type object_type_body;
@@ -5626,7 +5622,7 @@ void inven_item_increase(int item, int num)
 /*
  * Erase an inventory slot if it has no more items
  */
-bool inven_item_optimize(int item)
+bool_ inven_item_optimize(int item)
 {
 	object_type *o_ptr = &p_ptr->inventory[item];
 
@@ -5776,13 +5772,52 @@ void floor_item_optimize(int item)
 }
 
 
+/*
+ * Increase stack size for item, describe and optimize.
+ */
+void inc_stack_size(int item, int delta) {
+	inc_stack_size_ex(item, delta, OPTIMIZE, DESCRIBE);
+}
+
+/*
+ * Increase stack size for item.
+ */
+void inc_stack_size_ex(int item, int delta, optimize_flag opt, describe_flag desc) {
+	/* Pack item? */
+	if (item >= 0)
+	{
+		inven_item_increase(item, delta);
+		if (desc == DESCRIBE)
+		{
+			inven_item_describe(item);
+		}
+		if (opt == OPTIMIZE)
+		{
+			inven_item_optimize(item);
+		}
+	}
+
+	/* Floor item? */
+	else
+	{
+		floor_item_increase(0 - item, delta);
+		if (desc == DESCRIBE)
+		{
+			floor_item_describe(0 - item);
+		}
+		if (opt == OPTIMIZE)
+		{
+			floor_item_optimize(0 - item);
+		}
+	}
+}
 
 
 
 /*
  * Check if we have space for an item in the pack without overflow
  */
-bool inven_carry_okay(object_type *o_ptr)
+bool_ inven_carry_okay(object_type *o_ptr)
 {
 	int j;
 
@@ -5828,7 +5863,7 @@ bool inven_carry_okay(object_type *o_ptr)
  * The "final" flag tells this function to bypass the "combine"
  * and "reorder" code until later.
  */
-s16b inven_carry(object_type *o_ptr, bool final)
+s16b inven_carry(object_type *o_ptr, bool_ final)
 {
 	int i, j, k;
 	int n = -1;
@@ -5986,7 +6021,7 @@ s16b inven_carry(object_type *o_ptr, bool final)
  *
  * Return the inventory slot into which the item is placed.
  */
-s16b inven_takeoff(int item, int amt, bool force_drop)
+s16b inven_takeoff(int item, int amt, bool_ force_drop)
 {
 	int slot;
 
@@ -6058,8 +6093,7 @@ s16b inven_takeoff(int item, int amt, bool force_drop)
 	}
 
 	/* Modify, Optimize */
-	inven_item_increase(item, -amt);
-	inven_item_optimize(item);
+	inc_stack_size_ex(item, -amt, OPTIMIZE, NO_DESCRIBE);
 
 	if ((item == INVEN_CARRY) && (get_skill(SKILL_SYMBIOTIC)))
 	{
@@ -6095,7 +6129,7 @@ s16b inven_takeoff(int item, int amt, bool force_drop)
  *
  * The object will be dropped "near" the current location
  */
-void inven_drop(int item, int amt, int dy, int dx, bool silent)
+void inven_drop(int item, int amt, int dy, int dx, bool_ silent)
 {
 	object_type forge;
 	object_type *q_ptr;
@@ -6161,9 +6195,7 @@ void inven_drop(int item, int amt, int dy, int dx, bool silent)
 		drop_near(q_ptr, 0, dy, dx);
 
 		/* Modify, Describe, Optimize */
-		inven_item_increase(item, -amt);
-		inven_item_describe(item);
-		inven_item_optimize(item);
+		inc_stack_size(item, -amt);
 	}
 }
 
@@ -6179,7 +6211,7 @@ void combine_pack(void)
 	int i, j, k;
 	object_type *o_ptr;
 	object_type *j_ptr;
-	bool flag = FALSE;
+	bool_ flag = FALSE;
 
 
 	/* Combine the pack (backwards) */
@@ -6250,7 +6282,7 @@ void reorder_pack(void)
 	object_type *q_ptr;
 	object_type *j_ptr;
 	object_type *o_ptr;
-	bool flag = FALSE;
+	bool_ flag = FALSE;
 
 
 	/* Re-order the pack (forwards) */
@@ -6504,8 +6536,7 @@ void pack_decay(int item)
 	wt = r_ptr->weight;
 
 	/* Get rid of decayed object */
-	inven_item_increase(item, -amt);
-	inven_item_optimize(item);
+	inc_stack_size_ex(item, -amt, OPTIMIZE, NO_DESCRIBE);
 
 	if (i_ptr->tval == TV_CORPSE)
 	{
@@ -6576,7 +6607,7 @@ void floor_decay(int item)
 	byte y = o_ptr->iy;
 
 	/* Maybe the player sees it */
-	bool visible = player_can_see_bold(o_ptr->iy, o_ptr->ix);
+	bool_ visible = player_can_see_bold(o_ptr->iy, o_ptr->ix);
 	char desc[80];
 
 	if (visible)

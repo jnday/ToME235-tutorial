@@ -12,21 +12,13 @@
 
 #include "angband.h"
 
+#include "quark.h"
 
 /*
  * Display p_ptr->inventory
  */
 void do_cmd_inven(void)
 {
-#if 0
-	/* Broken */
-
-	int capacity_tester = 0;
-
-	int i = 0, j = 0;
-
-#endif
-
 	char out_val[160];
 
 
@@ -41,29 +33,11 @@ void do_cmd_inven(void)
 	item_tester_full = TRUE;
 
 	/* Display the p_ptr->inventory */
-	show_inven(FALSE);
+	show_inven();
 
 	/* Hack -- hide empty slots */
 	item_tester_full = FALSE;
 
-#if 0
-
-	/* Broken */
-
-	/* Extract the current weight (in tenth pounds) */
-	j = calc_total_weight();
-
-	/* Extract the "weight limit" (in tenth pounds) */
-	i = weight_limit();
-
-	capacity_tester = i + (i / 10) - 1;
-
-	strnfmt(out_val, 160,
-	        "Inventory: carrying %d.%d pounds (%d%% of capacity). Command: ",
-	        total_weight / 10, total_weight % 10,
-	        (total_weight * 100) / ((capacity_tester) / 2));
-
-#else
 
 	{
 		s32b total_weight = calc_total_weight();
@@ -73,8 +47,6 @@ void do_cmd_inven(void)
 		        total_weight / 10, total_weight % 10,
 		        (total_weight * 100) / ((weight_limit()) / 2));
 	}
-
-#endif
 
 	/* Get a command */
 	prt(out_val, 0, 0);
@@ -97,9 +69,6 @@ void do_cmd_inven(void)
 	/* Process normal keys */
 	else
 	{
-		/* Hack -- Use "display" mode */
-		command_see = TRUE;
-
 		/* Mega-Hack -- Don't disable keymaps for this key */
 		request_command_inven_mode = TRUE;
 	}
@@ -125,7 +94,7 @@ void do_cmd_equip(void)
 	item_tester_full = TRUE;
 
 	/* Display the equipment */
-	show_equip(FALSE);
+	show_equip();
 
 	/* Hack -- undo the hack above */
 	item_tester_full = FALSE;
@@ -162,9 +131,6 @@ void do_cmd_equip(void)
 	/* Process normal keys */
 	else
 	{
-		/* Enter "display" mode */
-		command_see = TRUE;
-
 		/* Mega-Hack -- Don't disable keymaps for this key */
 		request_command_inven_mode = TRUE;
 	}
@@ -174,7 +140,7 @@ void do_cmd_equip(void)
 /*
  * The "wearable" tester
  */
-static bool item_tester_hook_wear(object_type *o_ptr)
+static bool_ item_tester_hook_wear(object_type *o_ptr)
 {
 	u32b f1, f2, f3, f4, f5, esp;
 	int slot = wield_slot(o_ptr);
@@ -212,7 +178,7 @@ static bool item_tester_hook_wear(object_type *o_ptr)
 }
 
 
-bool is_slot_ok(int slot)
+bool_ is_slot_ok(int slot)
 {
 	if ((slot >= INVEN_WIELD) && (slot < INVEN_TOTAL))
 	{
@@ -255,17 +221,8 @@ void do_cmd_wield(void)
 	s = "You have nothing you can wear or wield.";
 	if (!get_item(&item, q, s, (USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Check the slot */
 	slot = wield_slot(o_ptr);
@@ -380,19 +337,8 @@ void do_cmd_wield(void)
 	/* Modify quantity */
 	q_ptr->number = num;
 
-	/* Decrease the item (from the pack) */
-	if (item >= 0)
-	{
-		inven_item_increase(item, -num);
-		inven_item_optimize(item);
-	}
-
-	/* Decrease the item (from the floor) */
-	else
-	{
-		floor_item_increase(0 - item, -num);
-		floor_item_optimize(0 - item);
-	}
+	/* Decrease the item */
+	inc_stack_size_ex(item, -num, OPTIMIZE, NO_DESCRIBE);
 
 	/* Access the wield slot */
 	o_ptr = &p_ptr->inventory[slot];
@@ -519,17 +465,8 @@ void do_cmd_takeoff(void)
 	s = "You are not wearing anything to take off.";
 	if (!get_item(&item, q, s, (USE_EQUIP))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Can we take it off */
 	if (process_hooks(HOOK_TAKEOFF, "(d)", item)) return;
@@ -577,17 +514,8 @@ void do_cmd_drop(void)
 	s = "You have nothing to drop.";
 	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &esp);
 
@@ -646,7 +574,7 @@ void do_cmd_destroy(void)
 
 	int old_number;
 
-	bool force = FALSE;
+	bool_ force = FALSE;
 
 	object_type *o_ptr;
 
@@ -668,17 +596,8 @@ void do_cmd_destroy(void)
 	s = "You have nothing to destroy.";
 	if (!get_item(&item, q, s, (USE_INVEN | USE_FLOOR | USE_AUTO))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 
 	/* See how many items */
@@ -763,22 +682,6 @@ void do_cmd_destroy(void)
 		automatizer_add_rule(o_ptr, TRUE);
 	}
 
-#if 0 /* DGDGDGDG -- use a skill */
-	if (cp_ptr->magic_key == MKEY_TELEKINESIS)
-	{
-		/* Good merchants don't break anything... */
-		s32b value = object_value_real(o_ptr);
-
-		if (value < 0) value = -value;
-
-		/* ... otherwise they lose some experience */
-		value = value * amt / 10;
-		if (value == 0) value = 1;
-
-		lose_exp(value);
-		msg_print("Good merchants should not break anything...");
-	}
-#endif
 	/*
 	 * Hack -- If rods or wand are destroyed, the total maximum timeout or
 	 * charges of the stack needs to be reduced, unless all the items are
@@ -793,21 +696,8 @@ void do_cmd_destroy(void)
 	if (f3 & TR3_BLESSED)
 		inc_piety(GOD_ERU, -10 * k_info[o_ptr->k_idx].level);
 
-	/* Eliminate the item (from the pack) */
-	if (item >= 0)
-	{
-		inven_item_increase(item, -amt);
-		inven_item_describe(item);
-		inven_item_optimize(item);
-	}
-
-	/* Eliminate the item (from the floor) */
-	else
-	{
-		floor_item_increase(0 - item, -amt);
-		floor_item_describe(0 - item);
-		floor_item_optimize(0 - item);
-	}
+	/* Eliminate the item */
+	inc_stack_size(item, -amt);
 }
 
 
@@ -830,17 +720,8 @@ void do_cmd_observe(void)
 	s = "You have nothing to examine.";
 	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Description */
 	object_desc(o_name, o_ptr, TRUE, 3);
@@ -872,17 +753,8 @@ void do_cmd_uninscribe(void)
 	s = "You have nothing to un-inscribe.";
 	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Nothing to remove */
 	if (!o_ptr->note)
@@ -926,17 +798,8 @@ void do_cmd_inscribe(void)
 	s = "You have nothing to inscribe.";
 	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Describe the activity */
 	object_desc(o_name, o_ptr, TRUE, 3);
@@ -974,7 +837,7 @@ void do_cmd_inscribe(void)
 /*
  * An "item_tester_hook" for refilling lanterns
  */
-static bool item_tester_refill_lantern(object_type *o_ptr)
+static bool_ item_tester_refill_lantern(object_type *o_ptr)
 {
 	/* Flasks of oil are okay */
 	if (o_ptr->tval == TV_FLASK) return (TRUE);
@@ -1009,18 +872,8 @@ static void do_cmd_refill_lamp(void)
 	s = "You have no flasks of oil.";
 	if (!get_item(&item, q, s, (USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
-
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Take a partial turn */
 	energy_use = 50;
@@ -1044,21 +897,8 @@ static void do_cmd_refill_lamp(void)
 		msg_print("Your lamp is full.");
 	}
 
-	/* Decrease the item (from the pack) */
-	if (item >= 0)
-	{
-		inven_item_increase(item, -1);
-		inven_item_describe(item);
-		inven_item_optimize(item);
-	}
-
-	/* Decrease the item (from the floor) */
-	else
-	{
-		floor_item_increase(0 - item, -1);
-		floor_item_describe(0 - item);
-		floor_item_optimize(0 - item);
-	}
+	/* Decrease the item stack */
+	inc_stack_size(item, -1);
 
 	/* Recalculate torch */
 	p_ptr->update |= (PU_TORCH);
@@ -1068,7 +908,7 @@ static void do_cmd_refill_lamp(void)
 /*
  * An "item_tester_hook" for refilling torches
  */
-static bool item_tester_refill_torch(object_type *o_ptr)
+static bool_ item_tester_refill_torch(object_type *o_ptr)
 {
 	/* Torches are okay */
 	if ((o_ptr->tval == TV_LITE) &&
@@ -1101,18 +941,8 @@ static void do_cmd_refill_torch(void)
 	s = "You have no extra torches.";
 	if (!get_item(&item, q, s, (USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
-
+	/* Get the item */
+	o_ptr = get_object(item);
 
 	/* Take a partial turn */
 	energy_use = 50;
@@ -1139,21 +969,8 @@ static void do_cmd_refill_torch(void)
 		msg_print("Your torch glows more brightly.");
 	}
 
-	/* Decrease the item (from the pack) */
-	if (item >= 0)
-	{
-		inven_item_increase(item, -1);
-		inven_item_describe(item);
-		inven_item_optimize(item);
-	}
-
-	/* Decrease the item (from the floor) */
-	else
-	{
-		floor_item_increase(0 - item, -1);
-		floor_item_describe(0 - item);
-		floor_item_optimize(0 - item);
-	}
+	/* Decrease the item stack */
+	inc_stack_size(item, -1);
 
 	/* Recalculate torch */
 	p_ptr->update |= (PU_TORCH);
@@ -1460,7 +1277,7 @@ static cptr ident_info[] =
  * We use "u" to point to array of monster indexes,
  * and "v" to select the type of sorting to perform on "u".
  */
-static bool ang_sort_comp_hook(vptr u, vptr v, int a, int b)
+static bool_ ang_sort_comp_hook(vptr u, vptr v, int a, int b)
 {
 	u16b *who = (u16b*)(u);
 
@@ -1574,10 +1391,6 @@ static void roff_top(int r_idx)
 	a1 = r_ptr->d_attr;
 	a2 = r_ptr->x_attr;
 
-	/* Hack -- fake monochrome */
-	if (!use_color) a1 = TERM_WHITE;
-	if (!use_color) a2 = TERM_WHITE;
-
 
 	/* Clear the top line */
 	Term_erase(0, 0, 255);
@@ -1630,19 +1443,19 @@ void do_cmd_query_symbol(void)
 	char buf[128];
 
 
-	bool all = FALSE;
+	bool_ all = FALSE;
 
-	bool uniq = FALSE;
+	bool_ uniq = FALSE;
 
-	bool norm = FALSE;
+	bool_ norm = FALSE;
 
 
-	bool name = FALSE;
+	bool_ name = FALSE;
 
 	char temp[80] = "";
 
 
-	bool recall = FALSE;
+	bool_ recall = FALSE;
 
 
 	u16b why = 0;
@@ -1875,7 +1688,7 @@ void do_cmd_query_symbol(void)
  *  research_mon
  *  -KMW-
  */
-bool research_mon()
+bool_ research_mon()
 {
 	int i, n, r_idx;
 
@@ -1888,19 +1701,19 @@ bool research_mon()
 
 	byte oldwake;
 
-	bool oldcheat;
+	bool_ oldcheat;
 
 
-	bool all = FALSE;
+	bool_ all = FALSE;
 
-	bool uniq = FALSE;
+	bool_ uniq = FALSE;
 
-	bool norm = FALSE;
+	bool_ norm = FALSE;
 
-	bool notpicked;
+	bool_ notpicked;
 
 
-	bool recall = FALSE;
+	bool_ recall = FALSE;
 
 	u16b why = 0;
 
@@ -2095,7 +1908,7 @@ bool research_mon()
 /*
  * Try to "sense" the grid's mana
  */
-bool do_cmd_sense_grid_mana()
+bool_ do_cmd_sense_grid_mana()
 {
 	int chance, i;
 
@@ -2176,12 +1989,6 @@ void set_portable_hole_weight(void)
 {
 	s32b weight, i, j;
 
-
-	/* Portable holes can be used only by merchants */
-#if 0 /* DGDGDGDG -- use a skill */
-	if (cp_ptr->magic_key == MKEY_TELEKINESIS) return;
-#endif
-
 	/* Calculate the weight of items in home */
 	weight = portable_hole_weight();
 
@@ -2233,12 +2040,6 @@ void do_cmd_portable_hole(void)
 	cave_type *c_ptr = &cave[p_ptr->py][p_ptr->px];
 
 	int feat, special, town_num;
-
-
-	/* Portable holes can be used only by merchants */
-#if 0 /* DGDGDGDG -- use a skill */
-	if (cp_ptr->magic_key != MKEY_TELEKINESIS) return;
-#endif
 
 	/* Is it currently wielded? */
 	if (!p_ptr->inventory[INVEN_TOOL].k_idx ||
@@ -2362,9 +2163,9 @@ void cli_add(cptr active, cptr trigger, cptr descr)
 /*
  * Get a string using CLI completion.
  */
-bool get_string_cli(cptr prompt, char *buf, int len)
+bool_ get_string_cli(cptr prompt, char *buf, int len)
 {
-	bool res;
+	bool_ res;
 
 
 	/* Paranoia XXX XXX XXX */
@@ -2483,7 +2284,7 @@ void do_cmd_cli_help()
 void do_cmd_html_dump()
 {
 	char tmp_val[81];
-	bool html = TRUE;
+	bool_ html = TRUE;
 	term_win *save;
 
 	/* Save the screen */

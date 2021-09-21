@@ -11,9 +11,6 @@
  *
  * This file is a big hack to make other files less of a hack.
  * This file has been rebuilt -- it may need a little more work.
- *
- * It is (very) unlikely that VMS will work without help, primarily
- * because VMS does not use the "ASCII" character set.
  */
 
 
@@ -21,18 +18,14 @@
 #include <ctype.h>
 #include <errno.h>
 
-#if defined(NeXT)
-# include <libc.h>
-#else
-# include <stdlib.h>
-#endif
+#include <stdlib.h>
 
 
 #ifdef SET_UID
 
 # include <sys/types.h>
 
-# if defined(Pyramid) || defined(NeXT) || defined(SUNOS) || \
+# if defined(Pyramid) || defined(SUNOS) || \
      defined(NCR3K) || defined(SUNOS) || defined(ibm032) || \
      defined(__osf__) || defined(ISC) || defined(SGI) || \
      defined(linux)
@@ -54,12 +47,12 @@
 # include <unix.h>
 #endif
 
-#if defined(WINDOWS) || defined(MSDOS) || defined(USE_EMX)
+#if defined(WINDOWS) || defined(MSDOS)
 # include <io.h>
 #endif
 
-#if !defined(MACINTOSH) && !defined(AMIGA) && \
-    !defined(ACORN) && !defined(VM) && !defined(__MWERKS__)
+#if !defined(MACINTOSH) && \
+    !defined(__MWERKS__)
 # if defined(__TURBOC__) || defined(__WATCOMC__)
 #  include <mem.h>
 # else
@@ -68,7 +61,7 @@
 #endif
 
 
-#if !defined(NeXT) && !defined(__MWERKS__) && !defined(ACORN)
+#if !defined(__MWERKS__)
 # include <fcntl.h>
 #endif
 
@@ -125,7 +118,7 @@ extern char *strrchr();
 
 
 
-#if !defined(linux) && !defined(__MWERKS__) && !defined(ACORN)
+#if !defined(linux) && !defined(__MWERKS__)
 extern long atol();
 #endif
 

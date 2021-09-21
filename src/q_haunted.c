@@ -1,9 +1,9 @@
 #undef cquest
 #define cquest (quest[QUEST_HAUNTED])
 
-bool quest_haunted_gen_hook(char *fmt)
+bool_ quest_haunted_gen_hook(char *fmt)
 {
-	int x, y, i;
+	int x, y, i, m_idx;
 	int xstart = 2;
 	int ystart = 2;
 
@@ -31,7 +31,7 @@ bool quest_haunted_gen_hook(char *fmt)
 	get_mon_num_prep();
 
 	init_flags = INIT_CREATE_DUNGEON;
-	process_dungeon_file(NULL, "haunted.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
+	process_dungeon_file("haunted.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE, FALSE);
 	dungeon_flags2 |= DF2_NO_GENO;
 
 	/* Place some ghosts */
@@ -43,7 +43,8 @@ bool quest_haunted_gen_hook(char *fmt)
 		flags = f_info[cave[y][x].feat].flags1;
 		if (!(flags & FF1_PERMANENT) && (flags & FF1_FLOOR))
 		{
-			place_monster_one(y, x, 477, 0, FALSE, MSTATUS_ENEMY);
+			m_idx = place_monster_one(y, x, 477, 0, FALSE, MSTATUS_ENEMY);
+			if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 			--i;
 		}
 	}
@@ -60,7 +61,8 @@ bool quest_haunted_gen_hook(char *fmt)
 			int monsters[22] = { 65, 100, 124, 125, 133, 231, 273, 327, 365, 416, 418,
 			                     507, 508, 533, 534, 553, 554, 555, 577, 607, 622, 665};
 			int monster = monsters[rand_int(22)];
-			place_monster_one(y, x, monster, 0, FALSE, MSTATUS_ENEMY);
+			m_idx = place_monster_one(y, x, monster, 0, FALSE, MSTATUS_ENEMY);
+			m_list[m_idx].mflag |= MFLAG_QUEST;
 			--i;
 		}
 	}
@@ -84,7 +86,7 @@ bool quest_haunted_gen_hook(char *fmt)
 	return TRUE;
 }
 
-bool quest_haunted_death_hook(char *fmt)
+bool_ quest_haunted_death_hook(char *fmt)
 {
 	int i, mcnt = 0;
 
@@ -116,7 +118,7 @@ bool quest_haunted_death_hook(char *fmt)
 	return FALSE;
 }
 
-bool quest_haunted_finish_hook(char *fmt)
+bool_ quest_haunted_finish_hook(char *fmt)
 {
 	s32b q_idx;
 
@@ -133,7 +135,7 @@ bool quest_haunted_finish_hook(char *fmt)
 	return TRUE;
 }
 
-bool quest_haunted_init_hook(int q_idx)
+bool_ quest_haunted_init_hook(int q_idx)
 {
 	if ((cquest.status >= QUEST_STATUS_UNTAKEN) && (cquest.status < QUEST_STATUS_FINISHED))
 	{

@@ -12,12 +12,14 @@
 
 #include "angband.h"
 
+#include "quark.h"
+
 /*
  * Note: return value indicates the amount of mana to use
  */
-bool power_chance(power_type *x_ptr)
+bool_ power_chance(power_type *x_ptr)
 {
-	bool use_hp = FALSE;
+	bool_ use_hp = FALSE;
 	int diff = x_ptr->diff;
 
 	/* Always true ? */
@@ -296,8 +298,7 @@ static void power_activate(int power)
 				{
 					ok = 0;
 
-					if (item >= 0) o2_ptr = &p_ptr->inventory[item];
-					else o2_ptr = &o_list[0 - item];
+					o2_ptr = get_object(item);
 
 					/* Is the item cursed? */
 					if ((item >= INVEN_WIELD) && cursed_p(o2_ptr))
@@ -346,18 +347,7 @@ static void power_activate(int power)
 					}
 
 					/* Destroy item */
-					if (item >= 0)
-					{
-						inven_item_increase(item, -1);
-						inven_item_describe(item);
-						inven_item_optimize(item);
-					}
-					else
-					{
-						inven_item_increase(0 - item, -1);
-						inven_item_describe(0 - item);
-						inven_item_optimize(0 - item);
-					}
+					inc_stack_size(item, -1);
 				}
 			}
 		}
@@ -663,13 +653,8 @@ static void power_activate(int power)
 	case PWR_WRECK_WORLD:
 		msg_print("The power of Eru Iluvatar flows through you!");
 		msg_print("The world changes!");
-		if (autosave_l)
-		{
-			is_autosave = TRUE;
-			msg_print("Autosaving the game...");
-			do_cmd_save_game();
-			is_autosave = FALSE;
-		}
+
+		autosave_checkpoint();
 		/* Leaving */
 		p_ptr->leaving = TRUE;
 		break;
@@ -790,7 +775,7 @@ static void power_activate(int power)
 			d = 2;
 			while (d < 100)
 			{
-				scatter(&y, &x, p_ptr->py, p_ptr->px, d, 0);
+				scatter(&y, &x, p_ptr->py, p_ptr->px, d);
 
 				if (cave_floor_bold(y, x) && (!cave[y][x].m_idx)) break;
 
@@ -1075,14 +1060,7 @@ static void power_activate(int power)
 			s = "You have nothing to drain.";
 			if (!get_item(&item, q, s, (USE_INVEN | USE_FLOOR))) break;
 
-			if (item >= 0)
-			{
-				o_ptr = &p_ptr->inventory[item];
-			}
-			else
-			{
-				o_ptr = &o_list[0 - item];
-			}
+			o_ptr = get_object(item);
 
 			lev = k_info[o_ptr->k_idx].level;
 
@@ -1245,7 +1223,32 @@ static void power_activate(int power)
 		use_ability_blade();
 		break;
 
+	case POWER_INVISIBILITY:
+		set_invis(20 + randint(30), 30);
+		break;
+
+	case POWER_WEB:
+		/* Warning, beware of f_info changes .. I hate to do that .. */
+		grow_things(16, 1 + (p_ptr->lev / 10));
+		break;
+
+	case POWER_COR_SPACE_TIME:
+		if (p_ptr->corrupt_anti_teleport_stopped)
+		{
+			p_ptr->corrupt_anti_teleport_stopped = FALSE;
+			msg_print("You stop controlling your corruption.");
+			p_ptr->update |= PU_BONUS;
+		}
+		else
+		{
+			p_ptr->corrupt_anti_teleport_stopped = TRUE;
+			msg_print("You start controlling your corruption, teleportation works once more.");
+			p_ptr->update |= PU_BONUS;
+		}
+		break;
+
 	default:
+
 		if (!process_hooks(HOOK_ACTIVATE_POWER, "(d)", power))
 		{
 			msg_format("Warning power_activate() called with invalid power(%d).", power);
@@ -1261,13 +1264,13 @@ static void power_activate(int power)
 /*
  * Print a batch of power.
  */
-static void print_power_batch(int *p, int start, int max, bool mode)
+static void print_power_batch(int *p, int start, int max)
 {
 	char buff[80];
 	power_type* spell;
 	int i = start, j = 0;
 
-	if (mode) prt(format("         %-31s Level Mana Fail", "Name"), 1, 20);
+	prt(format("         %-31s Level Mana Fail", "Name"), 1, 20);
 
 	for (i = start; i < (start + 20); i++)
 	{
@@ -1278,10 +1281,10 @@ static void print_power_batch(int *p, int start, int max, bool mode)
 		sprintf(buff, "  %c-%3d) %-30s  %5d %4d %s@%d", I2A(j), p[i] + 1, spell->name,
 		        spell->level, spell->cost, stat_names[spell->stat], spell->diff);
 
-		if (mode) prt(buff, 2 + j, 20);
+		prt(buff, 2 + j, 20);
 		j++;
 	}
-	if (mode) prt("", 2 + j, 20);
+	prt("", 2 + j, 20);
 	prt(format("Select a power (a-%c), +/- to scroll:", I2A(j - 1)), 0, 0);
 }
 
@@ -1295,12 +1298,10 @@ static power_type* select_power(int *x_idx)
 	char which;
 	int max = 0, i, start = 0;
 	power_type* ret;
-	bool mode = FALSE;
-	int *p;
+	int p[POWER_MAX];
 
-	C_MAKE(p, power_max, int);
 	/* Count the max */
-	for (i = 0; i < power_max; i++)
+	for (i = 0; i < POWER_MAX; i++)
 	{
 		if (p_ptr->powers[i])
 		{
@@ -1322,7 +1323,7 @@ static power_type* select_power(int *x_idx)
 
 		while (1)
 		{
-			print_power_batch(p, start, max, mode);
+			print_power_batch(p, start, max);
 			which = inkey();
 
 			if (which == ESCAPE)
@@ -1330,12 +1331,6 @@ static power_type* select_power(int *x_idx)
 				*x_idx = -1;
 				ret = NULL;
 				break;
-			}
-			else if (which == '*' || which == '?' || which == ' ')
-			{
-				mode = (mode) ? FALSE : TRUE;
-				Term_load();
-				character_icky = FALSE;
 			}
 			else if (which == '+')
 			{
@@ -1374,8 +1369,6 @@ static power_type* select_power(int *x_idx)
 		character_icky = FALSE;
 	}
 
-	C_FREE(p, power_max, int);
-
 	return ret;
 }
 
@@ -1384,12 +1377,12 @@ void do_cmd_power()
 {
 	int x_idx;
 	power_type *x_ptr;
-	bool push = TRUE;
+	bool_ push = TRUE;
 
 	/* Get the skill, if available */
 	if (repeat_pull(&x_idx))
 	{
-		if ((x_idx < 0) || (x_idx >= power_max)) return;
+		if ((x_idx < 0) || (x_idx >= POWER_MAX)) return;
 		x_ptr = &powers_type[x_idx];
 		push = FALSE;
 	}
@@ -1397,7 +1390,7 @@ void do_cmd_power()
 	else
 	{
 		x_idx = command_arg - 1;
-		if ((x_idx < 0) || (x_idx >= power_max)) return;
+		if ((x_idx < 0) || (x_idx >= POWER_MAX)) return;
 		x_ptr = &powers_type[x_idx];
 	}
 
