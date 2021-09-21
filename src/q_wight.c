@@ -1,7 +1,7 @@
 #undef cquest
 #define cquest (quest[QUEST_WIGHT])
 
-bool quest_wight_gen_hook(char *fmt)
+bool_ quest_wight_gen_hook(char *fmt)
 {
 	int x, y;
 	int xstart = 2;
@@ -26,9 +26,7 @@ bool quest_wight_gen_hook(char *fmt)
 	get_mon_num_prep();
 
 	init_flags = INIT_CREATE_DUNGEON;
-	process_dungeon_file_full = TRUE;
-	process_dungeon_file(NULL, "wights.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
-	process_dungeon_file_full = FALSE;
+	process_dungeon_file("wights.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE, TRUE);
 
 	for (x = 3; x < xstart; x++)
 		for (y = 3; y < ystart; y++)
@@ -47,6 +45,8 @@ bool quest_wight_gen_hook(char *fmt)
 
 					/* Get local object */
 					object_type forge, *q_ptr = &forge;
+
+					m_list[m_idx].mflag |= MFLAG_QUEST;
 
 					/* Prepare to make the  */
 					object_prep(q_ptr, lookup_kind(TV_SOFT_ARMOR, SV_FILTHY_RAG));
@@ -101,7 +101,7 @@ bool quest_wight_gen_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_wight_death_hook(char *fmt)
+bool_ quest_wight_death_hook(char *fmt)
 {
 	s32b r_idx, m_idx;
 
@@ -125,7 +125,7 @@ bool quest_wight_death_hook(char *fmt)
 
 	return (FALSE);
 }
-bool quest_wight_finish_hook(char *fmt)
+bool_ quest_wight_finish_hook(char *fmt)
 {
 	s32b q_idx;
 	q_idx = get_next_arg(fmt);
@@ -144,7 +144,7 @@ bool quest_wight_finish_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_wight_init_hook(int q_idx)
+bool_ quest_wight_init_hook(int q_idx)
 {
 	if ((cquest.status >= QUEST_STATUS_TAKEN) && (cquest.status < QUEST_STATUS_FINISHED))
 	{

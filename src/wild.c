@@ -133,7 +133,7 @@ static void plasma_recursive(int x1, int y1, int x2, int y2,
  *
  * Return the number of floor grids
  */
-int generate_area(int y, int x, bool border, bool corner, bool refresh)
+int generate_area(int y, int x, bool_ border, bool_ corner, bool_ refresh)
 {
 	int road, entrance;
 	int x1, y1;
@@ -224,7 +224,7 @@ int generate_area(int y, int x, bool border, bool corner, bool refresh)
 
 		/* Initialize the town */
 		init_flags = INIT_CREATE_DUNGEON;
-		process_dungeon_file(NULL, "t_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
+		process_dungeon_file("t_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE, FALSE);
 	}
 	else
 	{
@@ -280,47 +280,6 @@ int generate_area(int y, int x, bool border, bool corner, bool refresh)
 			}
 		}
 	}
-
-#if 0
-	/* Hack -- Use the "simple" RNG */
-	Rand_quick = TRUE;
-
-	/* Hack -- Induce consistant town layout */
-	Rand_value = wilderness[y][x].seed;
-
-	/* Generate a wilderness vault. */
-	if (magik(DUN_WILD_VAULT))
-	{
-		vault_type *v_ptr;
-		int vindex, vy, vx;
-		int i;
-
-		/* Pick a wilderness vault */
-		for (i = 0; i < 1000; i++)
-		{
-			/* Access a random vault record */
-			vindex = rand_int(max_v_idx);
-			v_ptr = &v_info[vindex];
-
-			/* Accept the first greater vault */
-			if (v_ptr->typ == 10) break;
-		}
-
-		/* Message */
-		if (cheat_room) msg_format("Wilderness Vault %d", vindex);
-
-		/* Boost the rating */
-		rating += v_ptr->rat;
-
-		vy = rand_range((v_ptr->hgt / 2) + 1, MAX_HGT - (v_ptr->hgt / 2)-1);
-		vx = rand_range((v_ptr->wid / 2) + 1, MAX_WID - (v_ptr->wid / 2)-1);
-
-		build_vault(vy, vx, v_ptr->hgt, v_ptr->wid, v_text + v_ptr->text);
-	}
-
-	/* Use the complex RNG */
-	Rand_quick = FALSE;
-#endif
 
 	/* Hack -- Use the "simple" RNG */
 	Rand_quick = TRUE;
@@ -385,13 +344,13 @@ static border_type border;
 void wilderness_gen(int refresh)
 {
 	int i, y, x, hack_floor;
-	bool daytime;
+	bool_ daytime;
 	int xstart = 0;
 	int ystart = 0;
 	cave_type *c_ptr;
 
 	/* Init the wilderness */
-	process_dungeon_file(NULL, "w_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
+	process_dungeon_file("w_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE, FALSE);
 
 	x = p_ptr->wilderness_x;
 	y = p_ptr->wilderness_y;
@@ -566,10 +525,12 @@ void wilderness_gen(int refresh)
 	}
 
 	/* Set rewarded quests to finished */
-	for (i = 0; i < max_q_idx; i++)
+	for (i = 0; i < MAX_Q_IDX; i++)
 	{
 		if (quest[i].status == QUEST_STATUS_REWARDED)
+		{
 			quest[i].status = QUEST_STATUS_FINISHED;
+		}
 	}
 
 	process_hooks(HOOK_WILD_GEN, "(d)", FALSE);
@@ -595,7 +556,7 @@ void wilderness_gen_small()
 	}
 
 	/* Init the wilderness */
-	process_dungeon_file(NULL, "w_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
+	process_dungeon_file("w_info.txt", &ystart, &xstart, cur_hgt, cur_wid, TRUE, FALSE);
 
 	/* Fill the map */
 	for (i = 0; i < max_wild_x; i++)
@@ -632,10 +593,12 @@ void wilderness_gen_small()
 	p_ptr->py = p_ptr->wilderness_y;
 
 	/* Set rewarded quests to finished */
-	for (i = 0; i < max_q_idx; i++)
+	for (i = 0; i < MAX_Q_IDX; i++)
 	{
 		if (quest[i].status == QUEST_STATUS_REWARDED)
+		{
 			quest[i].status = QUEST_STATUS_FINISHED;
+		}
 	}
 
 	process_hooks(HOOK_WILD_GEN, "(d)", TRUE);
@@ -972,7 +935,7 @@ static void town_borders(int t_idx, int qy, int qx)
 	}
 }
 
-static bool create_townpeople_hook(int r_idx)
+static bool_ create_townpeople_hook(int r_idx)
 {
 	monster_race *r_ptr = &r_info[r_idx];
 
@@ -991,7 +954,7 @@ static bool create_townpeople_hook(int r_idx)
 static void town_gen_hack(int t_idx, int qy, int qx)
 {
 	int y, x, floor, num = 0;
-	bool (*old_get_mon_num_hook)(int r_idx);
+	bool_ (*old_get_mon_num_hook)(int r_idx);
 
 	int *rooms;
 
@@ -1082,7 +1045,7 @@ static void town_gen_hack(int t_idx, int qy, int qx)
 static void town_gen_circle(int t_idx, int qy, int qx)
 {
 	int y, x, cy, cx, rad, floor, num = 0;
-	bool (*old_get_mon_num_hook)(int r_idx);
+	bool_ (*old_get_mon_num_hook)(int r_idx);
 
 	int *rooms;
 

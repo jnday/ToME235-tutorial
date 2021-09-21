@@ -1,11 +1,11 @@
 #undef cquest
 #define cquest (quest[QUEST_SHROOM])
 
-bool quest_shroom_speak_hook(char *fmt);
+bool_ quest_shroom_speak_hook(char *fmt);
 
-bool quest_shroom_town_gen_hook(char *fmt)
+bool_ quest_shroom_town_gen_hook(char *fmt)
 {
-	int x = 1, y = 1, try = 10000;
+	int m_idx, x = 1, y = 1, tries = 10000;
 	s32b small;
 
 	small = get_next_arg(fmt);
@@ -34,19 +34,22 @@ bool quest_shroom_town_gen_hook(char *fmt)
 		y = rand_range((cur_hgt / 2) - 5, (cur_hgt / 2) + 5);
 		x = rand_range((cur_wid / 2) - 7, (cur_wid / 2) + 7);
 		m_allow_special[test_monster_name("Grip, Farmer Maggot's dog")] = TRUE;
-		place_monster_one(y, x, test_monster_name("Grip, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		m_idx = place_monster_one(y, x, test_monster_name("Grip, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 		m_allow_special[test_monster_name("Grip, Farmer Maggot's dog")] = FALSE;
 
 		y = rand_range((cur_hgt / 2) - 5, (cur_hgt / 2) + 5);
 		x = rand_range((cur_wid / 2) - 7, (cur_wid / 2) + 7);
 		m_allow_special[test_monster_name("Wolf, Farmer Maggot's dog")] = TRUE;
-		place_monster_one(y, x, test_monster_name("Wolf, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		m_idx = place_monster_one(y, x, test_monster_name("Wolf, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 		m_allow_special[test_monster_name("Wolf, Farmer Maggot's dog")] = FALSE;
 
 		y = rand_range((cur_hgt / 2) - 5, (cur_hgt / 2) + 5);
 		x = rand_range((cur_wid / 2) - 7, (cur_wid / 2) + 7);
 		m_allow_special[test_monster_name("Fang, Farmer Maggot's dog")] = TRUE;
-		place_monster_one(y, x, test_monster_name("Fang, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		m_idx = place_monster_one(y, x, test_monster_name("Fang, Farmer Maggot's dog"), 0, FALSE, MSTATUS_ENEMY);
+		if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 		m_allow_special[test_monster_name("Fang, Farmer Maggot's dog")] = FALSE;
 
 		msg_print("You hear frenzied barking.");
@@ -56,7 +59,7 @@ bool quest_shroom_town_gen_hook(char *fmt)
 	if ((bst(HOUR, turn) < 6) || (bst(HOUR, turn) >= 18) || (cquest.status > QUEST_STATUS_COMPLETED) || (small) || (p_ptr->town_num != 1)) return (FALSE);
 
 	/* Find a good position */
-	while (try)
+	while (tries)
 	{
 		/* Get a random spot */
 		y = randint(20) + (cur_hgt / 2) - 10;
@@ -68,7 +71,7 @@ bool quest_shroom_town_gen_hook(char *fmt)
 		                cave_plain_floor_bold(y, x)) break;
 
 		/* One less try */
-		try--;
+		tries--;
 	}
 
 	/* Place Farmer Maggot */
@@ -78,7 +81,7 @@ bool quest_shroom_town_gen_hook(char *fmt)
 
 	return FALSE;
 }
-bool quest_shroom_death_hook(char *fmt)
+bool_ quest_shroom_death_hook(char *fmt)
 {
 	s32b r_idx, m_idx;
 
@@ -96,7 +99,7 @@ bool quest_shroom_death_hook(char *fmt)
 
 	return FALSE;
 }
-bool quest_shroom_give_hook(char *fmt)
+bool_ quest_shroom_give_hook(char *fmt)
 {
 	object_type *o_ptr;
 	monster_type *m_ptr;
@@ -130,8 +133,7 @@ bool quest_shroom_give_hook(char *fmt)
 	if ((o_ptr->tval != TV_FOOD) || (o_ptr->pval2 != 1)) return (FALSE);
 
 	/* Take a mushroom */
-	inven_item_increase(item, -1);
-	inven_item_optimize(item);
+	inc_stack_size_ex(item, -1, OPTIMIZE, NO_DESCRIBE);
 	cquest.data[0]++;
 
 	if (cquest.data[0] == cquest.data[1])
@@ -181,7 +183,7 @@ bool quest_shroom_give_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_shroom_speak_hook(char *fmt)
+bool_ quest_shroom_speak_hook(char *fmt)
 {
 	s32b m_idx = get_next_arg(fmt);
 
@@ -194,7 +196,7 @@ bool quest_shroom_speak_hook(char *fmt)
 		m_name = get_next_arg_str(fmt);
 
 		msg_format("%^s asks your help.", m_name);
-		exec_lua("ingame_help('monster_chat')");
+		process_hooks_new(HOOK_MON_ASK_HELP, NULL, NULL);
 	}
 	else
 	{
@@ -218,7 +220,7 @@ bool quest_shroom_speak_hook(char *fmt)
 	}
 	return (TRUE);
 }
-bool quest_shroom_chat_hook(char *fmt)
+bool_ quest_shroom_chat_hook(char *fmt)
 {
 	monster_type *m_ptr;
 	s32b m_idx;
@@ -263,14 +265,17 @@ bool quest_shroom_chat_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_shroom_init_hook(int q_idx)
+bool_ quest_shroom_init_hook(int q_idx)
 {
 	/* Get a number of 'shrooms */
 	if (!cquest.data[1])
 	{
 		cquest.data[0] = 0;
 		cquest.data[1] = rand_range(7, 14);
-		if (wizard) message_add(MESSAGE_MSG, format("Shrooms number %d", cquest.data[1]), TERM_BLUE);
+		if (wizard)
+		{
+			message_add(format("Shrooms number %d", cquest.data[1]), TERM_BLUE);
+		}
 	}
 
 	if ((cquest.status >= QUEST_STATUS_TAKEN) && (cquest.status < QUEST_STATUS_FINISHED))

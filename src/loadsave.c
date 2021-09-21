@@ -6,13 +6,11 @@
 
 #include "angband.h"
 
-/* Don't play with this yet */
-/* #define BZ_SAVES */
-#ifdef BZ_SAVES
-#include <bzlib.h>
-#endif /* BZ_SAVES */
+#include "messages.h"
+#include "quark.h"
 
 static void do_byte(byte *, int);
+static void do_bool(bool_ *, int);
 static void do_u16b(u16b *, int);
 static void do_s16b(s16b *, int);
 static void do_u32b(u32b *, int);
@@ -26,48 +24,24 @@ static void note(cptr);
 static void do_fate(int, int);
 static void do_item(object_type *, int);
 static void do_options(int);
-static bool do_store(store_type *, int);
+static bool_ do_store(store_type *, int);
 static void do_messages(int flag);
 static void do_xtra(int, int);
-static bool do_savefile_aux(int);
+static bool_ do_savefile_aux(int);
 static void junkinit(void);
 static void morejunk(void);
-static bool do_inventory(int);
-static bool do_dungeon(int, bool);
+static bool_ do_inventory(int);
+static bool_ do_dungeon(int, bool_);
 static void do_grid(int);
 static void my_sentinel(char *, u16b, int);
 
-#ifdef BZ_SAVES
-static void bz_done(int);
-static void bz_prep(int);
-#endif
-
-static void do_ver_byte(byte *, u32b, byte, int);
-static void do_ver_u16b(u16b *, u32b, u16b, int);
 static void do_ver_s16b(s16b *, u32b, s16b, int);
-static void do_ver_u32b(u32b *, u32b, u32b, int);
-static void do_ver_s32b(s32b *, u32b, s32b, int);
-static void do_ver_string(char *, int, u32b, char *, int);
 
 static void skip_ver_byte(u32b, int);
-static void skip_ver_u16b(u32b, int);
-static void skip_ver_s16b(u32b, int);
-static void skip_ver_u32b(u32b, int);
-static void skip_ver_s32b(u32b, int);
-static void skip_ver_string(u32b, int);
 
 errr rd_savefile(void);
 
-#ifdef SAFER_PANICS
-bool panicload;
-#endif
-
 static FILE *fff; 	/* Local savefile ptr */
-
-#ifdef BZ_SAVES
-BZFILE *bzf;
-int bzerr;
-#endif /* BZ_SAVES */
 
 /*
  * Basic byte-level reading from savefile. This provides a single point
@@ -89,19 +63,7 @@ static byte sf_get(void)
 	byte c;
 
 	/* Get a character, decode the value */
-#ifndef BZ_SAVES
 	c = getc(fff) & 0xFF;
-#else
-BZ2_bzRead(&bzerr, bzf, &c, 1);
-
-	if (bzerr != 0)
-	{
-		note(format("Compression error on read"));
-		bz_done(LS_LOAD);
-		printf("Died in sf_get\n");
-		exit(0);
-	}
-#endif /* BZ_SAVES */
 
 	/* Return the value */
 	return (c);
@@ -110,64 +72,8 @@ BZ2_bzRead(&bzerr, bzf, &c, 1);
 
 static void sf_put(byte v)
 {
-#ifndef BZ_SAVES
 	(void)putc((int)v, fff);
-#else
-	BZ2_bzWrite(&bzerr, bzf, &v, 1);
-
-	if (bzerr != 0)
-	{
-		note(format("Compression error on write"));
-		bz_done(LS_SAVE);
-		printf("Died in sf_put\n");
-		exit(0);
-	}
-#endif
 }
-
-/*
- * This function does nothing if BZ_SAVES in undefined.
- */
-#ifdef BZ_SAVES
-static void bz_prep(int flag)
-{
-
-	if (flag == LS_LOAD)
-	{
-		bzf = BZ2_bzReadOpen(&bzerr, fff, 0, 0, NULL, 0);
-	}
-
-	if (flag == LS_SAVE)
-	{
-		bzf = BZ2_bzWriteOpen(&bzerr, fff, 9, 0, 30);
-	}
-
-	if (bzerr == 0)
-	{
-		return ; 					/* All is Good */
-	}
-
-	/* Otherwise, all is bad */
-	note(format("Compression error on prep"));
-	printf("Died in bz_prep\n");
-	exit(0);
-
-	/* Unreachable code */
-	bz_done(flag);
-}
-
-static void bz_done(int flag)
-{
-	if (flag == LS_LOAD)
-	{
-		BZ2_bzReadClose(&bzerr, bzf);
-	}
-	if (flag == LS_SAVE)
-	{
-		BZ2_bzWriteClose(&bzerr, bzf, 0, NULL, NULL);
-	}
-}
-#endif	/* BZ_SAVES */
 
 /*
  * Do object memory and similar stuff
@@ -237,16 +143,16 @@ static void do_subrace(int flag)
 	char buf[81];
 
 	if (flag == LS_SAVE)
-		strcpy(buf, sr_ptr->title + rmp_name);
+		strncpy(buf, sr_ptr->title + rmp_name, 80);
 	do_string(buf, 80, flag);
 	if (flag == LS_LOAD)
-		strcpy(sr_ptr->title + rmp_name, buf);
+		strncpy(sr_ptr->title + rmp_name, buf, 80);
 
 	if (flag == LS_SAVE)
-		strcpy(buf, sr_ptr->desc + rmp_text);
+		strncpy(buf, sr_ptr->desc + rmp_text, 80);
 	do_string(buf, 80, flag);
 	if (flag == LS_LOAD)
-		strcpy(sr_ptr->desc + rmp_text, buf);
+		strncpy(sr_ptr->desc + rmp_text, buf, 80);
 
 	do_byte((byte*)&sr_ptr->place, flag);
 
@@ -319,13 +225,14 @@ static void do_subrace(int flag)
  * Misc. other data
  */
 static char loaded_game_module[80];
-static bool do_extra(int flag)
+static bool_ do_extra(int flag)
 {
 	int i, j;
 	byte tmp8u;
 	s16b tmp16s;
 	u32b tmp32u;
 	u16b tmp16b;
+	u32b dummy32u = 0;
 
 	do_string(player_name, 32, flag);
 
@@ -555,6 +462,7 @@ static bool do_extra(int flag)
 
 	/* Gods */
 	do_s32b(&p_ptr->grace, flag);
+	do_s32b(&p_ptr->grace_delay, flag);
 	do_byte((byte*)&p_ptr->praying, flag);
 	do_s16b(&p_ptr->melkor_sacrifice, flag);
 	do_byte(&p_ptr->pgod, flag);
@@ -578,7 +486,10 @@ static bool do_extra(int flag)
 		p_ptr->max_plv = p_ptr->lev;
 
 	do_byte((byte*)&(p_ptr->help.enabled), flag);
-	do_u32b(&(p_ptr->help.help1), flag);
+	for (i = 0; i < HELP_MAX; i++)
+	{
+		do_bool(&(p_ptr->help.activated[i]), flag);
+	}
 
 	/* More info */
 	tmp16s = 0;
@@ -609,6 +520,7 @@ static bool do_extra(int flag)
 	do_s16b(&p_ptr->blessed, flag);
 	do_s16b(&p_ptr->control, flag);
 	do_byte(&p_ptr->control_dir, flag);
+	do_s16b(&p_ptr->tim_precognition, flag);
 	do_s16b(&p_ptr->tim_thunder, flag);
 	do_s16b(&p_ptr->tim_thunder_p1, flag);
 	do_s16b(&p_ptr->tim_thunder_p2, flag);
@@ -670,22 +582,29 @@ static bool do_extra(int flag)
 	do_s32b(&p_ptr->loan, flag);
 	do_s32b(&p_ptr->loan_time, flag);
 	do_s16b(&p_ptr->absorb_soul, flag);
+	do_s32b(&p_ptr->inertia_controlled_spell, flag);
+	do_s16b(&p_ptr->last_rewarded_level, flag);
 
 	do_s16b(&p_ptr->chaos_patron, flag);
 
-	if (flag == LS_SAVE) tmp16s = max_corruptions;
+	if (flag == LS_SAVE) { tmp16s = CORRUPTIONS_MAX; }
 	do_s16b(&tmp16s, flag);
+	if (tmp16s > CORRUPTIONS_MAX) {
+		quit("Too many corruptions");
+	}
 
 	for (i = 0; i < tmp16s; i++)
 	{
-		if ((flag == LS_SAVE) && (i < max_corruptions))
+		if (flag == LS_SAVE)
 			tmp8u = p_ptr->corruptions[i];
 
 		do_byte(&tmp8u, flag);
 
-		if ((flag == LS_LOAD) && (i < max_corruptions))
+		if (flag == LS_LOAD)
 			p_ptr->corruptions[i] = tmp8u;
 	}
+
+	do_byte((byte*)&p_ptr->corrupt_anti_teleport_stopped, flag);
 
 	do_byte(&p_ptr->confusing, flag);
 	do_byte((byte*)&p_ptr->black_breath, flag);
@@ -698,9 +617,9 @@ static bool do_extra(int flag)
 	do_byte(&p_ptr->allow_one_death, flag);
 	do_s16b(&p_ptr->xtra_spells, flag);
 
-	do_byte(&vanilla_town, flag);
+	do_byte(&tmp8u, flag);
 
-	do_u16b(&no_breeds, flag);
+	do_s16b(&no_breeds, flag);
 	do_s16b(&p_ptr->protgood, flag);
 
 	/* Auxilliary variables */
@@ -728,12 +647,11 @@ static bool do_extra(int flag)
 	/* Are we in astral mode? */
 	do_byte((byte*)&p_ptr->astral, flag);
 
-	if (flag == LS_SAVE) tmp16s = POWER_MAX_INIT;
+	if (flag == LS_SAVE) tmp16s = POWER_MAX;
 	do_s16b(&tmp16s, flag);
-	if ((flag == LS_LOAD) && (tmp16s > POWER_MAX_INIT))
+	if ((flag == LS_LOAD) && (tmp16s > POWER_MAX))
 		note(format("Too many (%u) powers!", tmp16s));
-	if (flag == LS_SAVE) tmp16s = POWER_MAX_INIT;
-	for (i = 0; i < tmp16s; i++)
+	for (i = 0; i < POWER_MAX; i++)
 		do_byte((byte*)&p_ptr->powers_mod[i], flag);
 
 	skip_ver_byte(100, flag);
@@ -769,13 +687,13 @@ static bool do_extra(int flag)
 		do_s16b(&rune_spells[i].mana, flag);
 	}
 
-	/* Write the "object seeds" */
-	do_u32b(&seed_dungeon, flag);
-	do_u32b(&seed_flavor, flag);
-	do_u32b(&seed_town, flag);
+	/* Load random seeds */
+	do_u32b(&dummy32u, flag);    /* Load-compatibility with old savefiles. */
+	do_u32b(&seed_flavor, flag); /* For consistent object flavors. */
+	do_u32b(&dummy32u, flag);    /* Load-compatibility with old savefiles. */
 
 	/* Special stuff */
-	do_u16b(&panic_save, flag);
+	do_u16b(&tmp16b, flag);      /* Dummy */
 	do_u16b(&total_winner, flag);
 	do_u16b(&has_won, flag);
 	do_u16b(&noscore, flag);
@@ -790,7 +708,7 @@ static bool do_extra(int flag)
 	{
 		s32b ok;
 
-		call_lua("module_savefile_loadable", "(s,d)", "d", loaded_game_module, death, &ok);
+		ok = module_savefile_loadable(loaded_game_module);
 
 		/* Argh bad game module! */
 		if (!ok)
@@ -827,35 +745,21 @@ void save_dungeon(void)
 	sprintf(tmp, "%s.%s", player_base, buf);
 	path_build(name, 1024, ANGBAND_DIR_SAVE, tmp);
 
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Open the file */
 	fff = my_fopen(name, "wb");
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
-
-#ifdef BZ_SAVES
-	bz_prep(LS_SAVE);
-#endif /* BZ_SAVES */
 
 	/* Save the dungeon */
 	do_dungeon(LS_SAVE, TRUE);
 
-	/* Done */
-#ifdef BZ_SAVES
-	bz_done(LS_SAVE);
-#endif /* BZ_SAVES */
 	my_fclose(fff);
 }
 
 /*
  * Medium level player saver
  */
-static bool save_player_aux(char *name)
+static bool_ save_player_aux(char *name)
 {
-	bool ok = FALSE;
+	bool_ ok = FALSE;
 	int fd = -1;
 	int mode = 0644;
 
@@ -865,14 +769,8 @@ static bool save_player_aux(char *name)
 	/* File type is "SAVE" */
 	FILE_TYPE(FILE_TYPE_SAVE);
 
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Create the savefile */
 	fd = fd_make(name, mode);
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	/* File is okay */
 	if (fd >= 0)
@@ -880,32 +778,15 @@ static bool save_player_aux(char *name)
 		/* Close the "fd" */
 		(void)fd_close(fd);
 
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
 		/* Open the savefile */
 		fff = my_fopen(name, "wb");
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-#ifdef BZ_SAVES
-		bz_prep(LS_SAVE);
-#endif
 
 		/* Successful open */
 		if (fff)
 		{
-#ifdef BZ_SAVES
-			bz_prep(LS_SAVE);
-#endif /* BZ_SAVES */
-
 			/* Write the savefile */
 			if (do_savefile_aux(LS_SAVE)) ok = TRUE;
 
-#ifdef BZ_SAVES
-			bz_done(LS_SAVE);
-#endif /* BZ_SAVES */
 			/* Attempt to close it */
 			if (my_fclose(fff)) ok = FALSE;
 		}
@@ -913,14 +794,8 @@ static bool save_player_aux(char *name)
 		/* "broken" savefile */
 		if (!ok)
 		{
-			/* Grab permission */
-			if (savefile_setuid) safe_setuid_grab();
-
 			/* Remove "broken" files */
 			(void)fd_kill(name);
-
-			/* Drop permission */
-			if (savefile_setuid) safe_setuid_drop();
 		}
 	}
 
@@ -937,60 +812,17 @@ static bool save_player_aux(char *name)
 /*
  * Attempt to save the player in a savefile
  */
-bool save_player(void)
+bool_ save_player(void)
 {
 	int result = FALSE;
 	char safe[1024];
-#ifdef SAFER_PANICS
-	char panicsave[1024];
-#endif /* SAFER PANICS */
-
-
-#ifdef SAFER_PANICS
-	if (panic_save)
-	{
-		/*
-		 * Not sure how to do this so it's nicely portable to brain-damaged
-		 * OS's with short filenames
-		 */
-		strcpy(panicsave, savefile);
-		strcat(panicsave, ".pnc");
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Remove any old panic saves */
-		fd_kill(panicsave);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-		/* Save character */
-		save_player_aux(panicsave);
-
-		return TRUE;
-	}
-#endif /* SAFER_PANICS */
-
 
 	/* New savefile */
 	strcpy(safe, savefile);
 	strcat(safe, ".new");
 
-#ifdef VM
-	/* Hack -- support "flat directory" usage on VM/ESA */
-	strcpy(safe, savefile);
-	strcat(safe, "n");
-#endif /* VM */
-
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Remove it */
 	fd_kill(safe);
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	/* Attempt to save the player */
 	if (save_player_aux(safe))
@@ -1000,15 +832,6 @@ bool save_player(void)
 		/* Old savefile */
 		strcpy(temp, savefile);
 		strcat(temp, ".old");
-
-#ifdef VM
-		/* Hack -- support "flat directory" usage on VM/ESA */
-		strcpy(temp, savefile);
-		strcat(temp, "o");
-#endif /* VM */
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
 
 		/* Remove it */
 		fd_kill(temp);
@@ -1022,28 +845,8 @@ bool save_player(void)
 		/* Remove preserved savefile */
 		fd_kill(temp);
 
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
 		/* Hack -- Pretend the character was loaded */
 		character_loaded = TRUE;
-
-#ifdef VERIFY_SAVEFILE
-
-		/* Lock on savefile */
-		strcpy(temp, savefile);
-		strcat(temp, ".lok");
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Remove lock file */
-		fd_kill(temp);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-#endif
 
 		/* Success */
 		result = TRUE;
@@ -1055,19 +858,13 @@ bool save_player(void)
 	return (result);
 }
 
-bool file_exist(char *buf)
+bool_ file_exist(cptr buf)
 {
 	int fd;
-	bool result;
-
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
+	bool_ result;
 
 	/* Open savefile */
 	fd = fd_open(buf, O_RDONLY);
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	/* File exists */
 	if (fd >= 0)
@@ -1095,36 +892,13 @@ bool file_exist(char *buf)
  * Note that we always try to load the "current" savefile, even if
  * there is no such file, so we must check for "empty" savefile names.
  */
-bool load_player(void)
+bool_ load_player(void)
 {
 	int fd = -1;
 
 	errr err = 0;
 
-#ifdef SAFER_PANICS
-	char panic_fname[1024]; 	/* Filename for panic savefiles */
-	int testfd = -1;
-#endif /* SAFER_PANICS */
-
-#ifdef VERIFY_TIMESTAMP
-	struct stat statbuf;
-#endif /* VERIFY_TIMESTAMP */
-
 	cptr what = "generic";
-
-#ifdef SAFER_PANICS
-	panicload = FALSE;
-	strncpy(panic_fname, savefile, 1024);
-	strcat(panic_fname, ".pnc"); 	/* This might concievably cause a buffer
-										   overflow, but the rest of the code
-										   in this file does likewise. If someone
-										   ever audits pernband for security
-										   problems, well, don't blame me. The rest
-										   of the code was like this before I even
-										   got here -- Pat */
-
-#endif /* SAFER_PANICS */
-
 
 	/* Paranoia */
 	turn = 0;
@@ -1140,11 +914,7 @@ bool load_player(void)
 	/* XXX XXX XXX Fix this */
 
 	/* Verify the existance of the savefile */
-	if ((!file_exist(savefile))
-#ifdef SAFER_PANICS
-	                && (!file_exist(panic_fname))
-#endif /* SAFER_PANICS */
-	   )
+	if (!file_exist(savefile))
 	{
 		/* Give a message */
 		msg_format("Savefile does not exist: %s", savefile);
@@ -1154,73 +924,11 @@ bool load_player(void)
 		return (TRUE);
 	}
 
-
-#ifdef VERIFY_SAVEFILE
-
-	/* Verify savefile usage */
-	if (!err)
-	{
-		FILE *fkk;
-
-		char temp[1024];
-
-		/* Extract name of lock file */
-		strcpy(temp, savefile);
-		strcat(temp, ".lok");
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Check for lock */
-		fkk = my_fopen(temp, "r");
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-		/* Oops, lock exists */
-		if (fkk)
-		{
-			/* Close the file */
-			my_fclose(fkk);
-
-			/* Message */
-			msg_print("Savefile is currently in use.");
-			msg_print(NULL);
-
-			/* Oops */
-			return (FALSE);
-		}
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Create a lock file */
-		fkk = my_fopen(temp, "w");
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-		/* Dump a line of info */
-		fprintf(fkk, "Lock file for savefile '%s'\n", savefile);
-
-		/* Close the lock file */
-		my_fclose(fkk);
-	}
-
-#endif
-
-
 	/* Okay */
 	if (!err)
 	{
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
 		/* Open the savefile */
 		fd = fd_open(savefile, O_RDONLY);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
 
 		/* No file */
 		if (fd < 0) err = -1;
@@ -1229,74 +937,16 @@ bool load_player(void)
 		if (err) what = "Cannot open savefile";
 	}
 
-#ifdef SAFER_PANICS
-
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
-	/* Open panic save file */
-	testfd = fd_open(panic_fname, O_RDONLY);
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
-
-	fd_close(testfd);
-
-	/* A panic save exists, which is not normally the case */
-	if (testfd > 0)
-	{
-		panicload = 1;
-
-		/* Close the normal save file */
-		fd_close(fd);
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Prefer panic saves over real saves */
-		fd = fd_open(panic_fname, O_RDONLY);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-		/* This is not the error if we're at this pt */
-		what = "";
-		err = 0;
-	}
-
-#endif /* SAFER_PANICS */
-
 	/* Process file */
 	if (!err)
 	{
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-#ifdef VERIFY_TIMESTAMP
-
-		/* Get the timestamp */
-		(void)fstat(fd, &statbuf);
-
-#endif
-
 		/* Open the file XXX XXX XXX XXX Should use Angband file interface */
 		fff = my_fopen(savefile, "rb");
 /*		fff = fdopen(fd, "r"); */
 
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-#ifdef BZ_SAVES
-		bz_prep(LS_LOAD);
-#endif /* BZ_SAVES */
-
 		/* Read the first four bytes */
 		do_u32b(&vernum, LS_LOAD);
 		do_byte(&sf_extra, LS_LOAD);
-
-#ifdef BZ_SAVES
-		bz_done(LS_LOAD);
-#endif /* BZ_SAVES */
 
 		/* XXX XXX XXX XXX Should use Angband file interface */
 		my_fclose(fff);
@@ -1335,25 +985,6 @@ bool load_player(void)
 		/* Message (below) */
 		if (err) what = "Broken savefile";
 	}
-
-#ifdef VERIFY_TIMESTAMP
-
-	/* Verify timestamp */
-	if (!err && !arg_wizard)
-	{
-		/* Hack -- Verify the timestamp */
-		if (sf_when > (statbuf.st_ctime + 100) ||
-		                sf_when < (statbuf.st_ctime - 100))
-		{
-			/* Message */
-			what = "Invalid timestamp";
-
-			/* Oops */
-			err = -1;
-		}
-	}
-
-#endif
 
 
 	/* Okay */
@@ -1403,51 +1034,9 @@ bool load_player(void)
 			(void)strcpy(died_from, "(alive and well)");
 		}
 
-#ifdef SAFER_PANICS
-		if (panicload)
-		{
-			/* Grab permission */
-			if (savefile_setuid) safe_setuid_grab();
-
-			/*
-			 * Done loading, it'll either immediately panic and re-save, or
-			 * we don't need the panicsave file anymore. Either way, it's safe
-			 * to zap the original panicsave
-			 */
-			fd_kill(panic_fname);
-
-			/* Drop permission */
-			if (savefile_setuid) safe_setuid_drop();
-		}
-#endif /* SAFER_PANICS */
-
 		/* Success */
 		return (TRUE);
 	}
-
-
-#ifdef VERIFY_SAVEFILE
-
-	/* Verify savefile usage */
-	if (TRUE)
-	{
-		char temp[1024];
-
-		/* Extract name of lock file */
-		strcpy(temp, savefile);
-		strcat(temp, ".lok");
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Remove lock */
-		fd_kill(temp);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-	}
-
-#endif
 
 
 	/* Message */
@@ -1483,6 +1072,16 @@ static void do_byte(byte *v, int flag)
 	exit(0);
 }
 
+static void do_bool(bool_ *f, int flag)
+{
+	byte b = *f;
+	do_byte(&b, flag);
+	if (flag == LS_LOAD)
+	{
+		*f = b;
+	}
+}
+
 static void do_u16b(u16b *v, int flag)
 {
 	if (flag == LS_LOAD)
@@ -1506,21 +1105,7 @@ static void do_u16b(u16b *v, int flag)
 
 static void do_s16b(s16b *ip, int flag)
 {
-	if (flag == LS_LOAD)
-	{
-		do_u16b((u16b *)ip, flag);
-		return;
-	}
-	if (flag == LS_SAVE)
-	{
-		s16b val;
-		val = *ip;
-		do_u16b((u16b *)ip, flag);
-		return;
-	}
-	/* Blah blah, never should reach here, die */
-	printf("FATAL: do_s16b passed %d\n", flag);
-	exit(0);
+	do_u16b((u16b *)ip, flag);
 }
 
 static void do_u32b(u32b *ip, int flag)
@@ -1549,19 +1134,7 @@ static void do_u32b(u32b *ip, int flag)
 
 static void do_s32b(s32b *ip, int flag)
 {
-	if (flag == LS_LOAD)
-	{
-		do_u32b((u32b *)ip, flag);
-		return;
-	}
-	if (flag == LS_SAVE)
-	{
-		do_u32b((u32b *)ip, flag);
-		return;
-	}
-	/* Raus! Schnell! */
-	printf("FATAL: do_s32b passed %d\n", flag);
-	exit(0);
+	do_u32b((u32b *)ip, flag);
 }
 
 static void do_string(char *str, int max, int flag)
@@ -1603,24 +1176,6 @@ static void do_string(char *str, int max, int flag)
 	exit(0);
 }
 
-/*
- * Periodically, to reduce overhead and code clutter, we'll probably
- * want to convert all calls to do_ver_??? with direct do_??? calls, and
- * break the backwards compatibility. How often this needs to happen
- * remains to be seen, as the rate of accumulation isn't very
- * predictable. -- Improv
- */
-static void do_ver_byte(byte *v, u32b version, byte defval, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum < version))
-	{
-		*v = defval; 			/* Use the default value, and DO NOT READ */
-		return;
-	}
-
-	do_byte(v, flag); 			/* Otherwise, go as normal */
-}
-
 static void skip_ver_byte(u32b version, int flag)
 /* Reads and discards a byte if the savefile is as old as/older than version */
 {
@@ -1628,26 +1183,6 @@ static void skip_ver_byte(u32b version, int flag)
 	{
 		byte forget;
 		do_byte(&forget, flag);
-	}
-	return;
-}
-
-static void do_ver_u16b(u16b *v, u32b version, u16b defval, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum < version))
-	{
-		*v = defval;
-		return;
-	}
-	do_u16b(v, flag);
-}
-
-static void skip_ver_u16b(u32b version, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum <= version))
-	{
-		u16b forget;
-		do_u16b(&forget, flag);
 	}
 	return;
 }
@@ -1660,80 +1195,6 @@ static void do_ver_s16b(s16b *v, u32b version, s16b defval, int flag)
 		return;
 	}
 	do_s16b(v, flag);
-}
-
-static void skip_ver_s16b(u32b version, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum <= version))
-	{
-		s16b forget;
-		do_s16b(&forget, flag);
-	}
-	return;
-}
-
-static void do_ver_u32b(u32b *v, u32b version, u32b defval, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum < version))
-	{
-		*v = defval;
-		return;
-	}
-	do_u32b(v, flag);
-}
-
-static void skip_ver_u32b(u32b version, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum <= version))
-	{
-		u32b forget;
-		do_u32b(&forget, flag);
-	}
-	return;
-}
-
-static void do_ver_s32b(s32b *v, u32b version, s32b defval, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum < version))
-	{
-		*v = defval;
-		return;
-	}
-	do_s32b(v, flag);
-}
-
-static void skip_ver_s32b(u32b version, int flag)
-{
-	if ((flag == LS_LOAD) && (vernum <= version))
-	{
-		s32b forget;
-		do_s32b(&forget, flag);
-	}
-	return;
-}
-
-static void do_ver_string(char *str, int max, u32b version, char *defval,
-                          int flag)
-/* Careful, remember the argument order here */
-{
-	if ((flag == LS_LOAD) && (vernum < version))
-	{
-		strncpy(str, defval, max);
-		str[max - 1] = '\0'; 	/* Ensure that whatever happens, the result string is term'd */
-		return;
-	}
-	do_string(str, max, flag);
-}
-
-static void skip_ver_string(u32b version, int flag)
-/* This function is slow and bulky */
-{
-	if ((flag == LS_LOAD) && (vernum <= version))
-	{
-		char forget[1000];
-		do_string(forget, 999, flag);
-	}
-	return;
 }
 
 /*
@@ -1759,7 +1220,7 @@ static void note(cptr msg)
 /*
  * Determine if an item can be wielded/worn (e.g. helmet, sword, bow, arrow)
  */
-static bool wearable_p(object_type *o_ptr)
+static bool_ wearable_p(object_type *o_ptr)
 {
 	/* Valid "tval" codes */
 	switch (o_ptr->tval)
@@ -1969,14 +1430,6 @@ static void do_item(object_type *o_ptr, int flag)
 		o_ptr->dd = k_ptr->dd;
 		o_ptr->ds = k_ptr->ds;
 
-#if 0
-		/* Acquire correct weight */
-		if ((o_ptr->tval != TV_CORPSE) &&
-		                (o_ptr->tval != TV_EGG)) o_ptr->weight = k_ptr->weight;
-
-		/* Paranoia */
-		o_ptr->name1 = o_ptr->name2 = 0;
-#endif
 		/* All done */
 		return;
 	}
@@ -2035,12 +1488,6 @@ static void do_item(object_type *o_ptr, int flag)
 	/* Ego items */
 	if (o_ptr->name2)
 	{
-		ego_item_type *e_ptr;
-
-		/* Obtain the ego-item info */
-		e_ptr = &e_info[o_ptr->name2];
-
-
 		o_ptr->dd = old_dd;
 		o_ptr->ds = old_ds;
 	}
@@ -2061,7 +1508,7 @@ static void do_item(object_type *o_ptr, int flag)
 static void do_monster(monster_type *m_ptr, int flag)
 {
 	int i;
-	bool tmp;
+	bool_ tmp;
 
 	/* Read the monster race */
 	do_s16b(&m_ptr->r_idx, flag);
@@ -2254,7 +1701,7 @@ static void do_lore(int r_idx, int flag)
 /*
  * Read a store
  */
-static bool do_store(store_type *str, int flag)
+static bool_ do_store(store_type *str, int flag)
 /* FIXME! Why does this return anything when
    it always returns the same thing? */
 {
@@ -2539,7 +1986,7 @@ static void do_spells(int i, int flag)
  * FIXME! This function probably could be unified better
  * Note that the inventory is "re-sorted" later by "dungeon()".
  */
-static bool do_inventory(int flag)
+static bool_ do_inventory(int flag)
 {
 	if (flag == LS_LOAD)
 	{
@@ -2641,12 +2088,11 @@ static void do_messages(int flag)   /* FIXME! We should be able to unify this be
 {
 	int i;
 	char buf[128];
-	byte color, type;
+	byte color;
 
 	s16b num;
 
-	if (flag == LS_SAVE) num = (compress_savefile &&
-		                            (message_num() > 40)) ? 40 : message_num();
+	if (flag == LS_SAVE) num = message_num();
 
 	/* Total */
 	do_s16b(&num, flag);
@@ -2654,27 +2100,28 @@ static void do_messages(int flag)   /* FIXME! We should be able to unify this be
 	/* Read the messages */
 	if (flag == LS_LOAD)
 	{
+		byte tmp8u = 0;
 		for (i = 0; i < num; i++)
 		{
 			/* Read the message */
 			do_string(buf, 128, LS_LOAD);
 			do_byte(&color, flag);
-			do_byte(&type, flag);
+			do_byte(&tmp8u, flag);
 
 			/* Save the message */
-			message_add(type, buf, color);
+			message_add(buf, color);
 		}
 	}
 	if (flag == LS_SAVE)
 	{
 		byte holder;
+		byte zero = 0;
 		for (i = num - 1; i >= 0; i--)
 		{
 			do_string((char *)message_str((s16b)i), 0, LS_SAVE);
 			holder = message_color((s16b)i);
 			do_byte(&holder, flag);
-			holder = message_type((s16b)i);
-			do_byte(&holder, flag);
+			do_byte(&zero, flag);
 		}
 	}
 }
@@ -2685,7 +2132,7 @@ static void do_messages(int flag)   /* FIXME! We should be able to unify this be
  * The monsters/objects must be loaded in the same order
  * that they were stored, since the actual indexes matter.
  */
-static bool do_dungeon(int flag, bool no_companions)
+static bool_ do_dungeon(int flag, bool_ no_companions)
 {
 	int i;
 
@@ -2746,15 +2193,15 @@ static bool do_dungeon(int flag, bool no_companions)
 		int xstart = 0;
 		int ystart = 0;
 		/* Init the wilderness */
-		process_dungeon_file(NULL, "w_info.txt", &ystart, &xstart, cur_hgt, cur_wid,
-		                     TRUE);
+		process_dungeon_file("w_info.txt", &ystart, &xstart, cur_hgt, cur_wid,
+		                     TRUE, FALSE);
 
 		/* Init the town */
 		xstart = 0;
 		ystart = 0;
 		init_flags = 0;
-		process_dungeon_file(NULL, "t_info.txt", &ystart, &xstart, cur_hgt, cur_wid,
-		                     TRUE);
+		process_dungeon_file("t_info.txt", &ystart, &xstart, cur_hgt, cur_wid,
+		                     TRUE, FALSE);
 	}
 
 	do_grid(flag);
@@ -2974,7 +2421,7 @@ static bool do_dungeon(int flag, bool no_companions)
 }
 
 /* Returns TRUE if we successfully load the dungeon */
-bool load_dungeon(char *ext)
+bool_ load_dungeon(char *ext)
 {
 	char tmp[16];
 	char name[1024];
@@ -2985,14 +2432,8 @@ bool load_dungeon(char *ext)
 	sprintf(tmp, "%s.%s", player_base, ext);
 	path_build(name, 1024, ANGBAND_DIR_SAVE, tmp);
 
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Open the file */
 	fff = my_fopen(name, "rb");
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	if (fff == NULL)
 	{
@@ -3003,19 +2444,12 @@ bool load_dungeon(char *ext)
 		return (FALSE);
 	}
 
-#ifdef BZ_SAVES
-	bz_prep(LS_LOAD);
-#endif /* BZ_SAVES */
-
 	/* Read the dungeon */
 	if (!do_dungeon(LS_LOAD, FALSE))
 	{
 		dun_level = old_dun;
 		dungeon_type = old_dungeon_type;
 
-#ifdef BZ_SAVES
-		bz_done(LS_LOAD);
-#endif /* BZ_SAVES */
 		my_fclose(fff);
 		return (FALSE);
 	}
@@ -3024,9 +2458,6 @@ bool load_dungeon(char *ext)
 	dungeon_type = old_dungeon_type;
 
 	/* Done */
-#ifdef BZ_SAVES
-	bz_done(LS_LOAD);
-#endif /* BZ_SAVES */
 	my_fclose(fff);
 	return (TRUE);
 }
@@ -3066,17 +2497,31 @@ void do_fate(int i, int flag)
 }
 
 /*
+ * Load/save timers.
+ */
+static void do_timers(int flag)
+{
+	timer_type *t_ptr;
+
+	for (t_ptr = gl_timers; t_ptr != NULL; t_ptr = t_ptr->next)
+	{
+		do_bool(&t_ptr->enabled, flag);
+		do_s32b(&t_ptr->delay, flag);
+		do_s32b(&t_ptr->countdown, flag);
+	}
+}
+
+/*
  * Actually read the savefile
  */
-static bool do_savefile_aux(int flag)
+static bool_ do_savefile_aux(int flag)
 {
 	int i, j;
 
 	byte tmp8u;
 	u16b tmp16u;
-	u32b tmp32u;
 
-	bool *reals;
+	bool_ *reals;
 	u16b real_max = 0;
 
 	/* Mention the savefile version */
@@ -3135,20 +2580,20 @@ static bool do_savefile_aux(int flag)
 		strcpy(loaded_game_module, game_module);
 	do_string(loaded_game_module, 80, flag);
 
+	/* Timers */
+	do_timers(flag);
+
 	/* Read RNG state */
 	do_randomizer(flag);
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Randomizer Info");
 
 	/* Automatizer state */
 	do_byte((byte*)&automatizer_enabled, flag);
 
 	/* Then the options */
 	do_options(flag);
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Option Flags");
 
 	/* Then the "messages" */
 	do_messages(flag);
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Messages");
 
 	/* Monster Memory */
 	if (flag == LS_SAVE) tmp16u = max_r_idx;
@@ -3164,16 +2609,10 @@ static bool do_savefile_aux(int flag)
 	/* Read the available records */
 	for (i = 0; i < tmp16u; i++)
 	{
-		monster_race *r_ptr;
-
 		/* Read the lore */
 		do_lore(i, flag);
-
-		/* Access that monster */
-		r_ptr = &r_info[i]; 		/* FIXME! Why the hell are we doing this? */
 	}
 
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Monster Memory");
 	/* Object Memory */
 	if (flag == LS_SAVE) tmp16u = max_k_idx;
 	do_u16b(&tmp16u, flag);
@@ -3187,7 +2626,6 @@ static bool do_savefile_aux(int flag)
 
 	/* Read the object memory */
 	for (i = 0; i < tmp16u; i++) do_xtra(i, flag);
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Object Memory");
 	if (flag == LS_LOAD) junkinit();
 
 	{
@@ -3261,27 +2699,30 @@ static bool do_savefile_aux(int flag)
 			do_s16b(&(d_info[i].t_num), flag);
 		}
 
-		if (flag == LS_SAVE) max_quests_ldsv = MAX_Q_IDX_INIT;
-		/* Number of quests */
+		/* Sanity check number of quests */
+		if (flag == LS_SAVE) max_quests_ldsv = MAX_Q_IDX;
 		do_u16b(&max_quests_ldsv, flag);
 
 		/* Incompatible save files */
-		if ((flag == LS_LOAD) && (max_quests_ldsv > MAX_Q_IDX_INIT))
+		if ((flag == LS_LOAD) && (max_quests_ldsv != MAX_Q_IDX))
 		{
-			note(format("Too many (%u) quests!", max_quests_ldsv));
+			note(format("Invalid number of quests (%u)!", max_quests_ldsv));
 			return (FALSE);
 		}
 
-		for (i = 0; i < max_quests_ldsv; i++)
+		for (i = 0; i < MAX_Q_IDX; i++)
 		{
 			do_s16b(&quest[i].status, flag);
-			for (j = 0; j < 4; j++)
+			for (j = 0; j < sizeof(quest[i].data)/sizeof(quest[i].data[0]); j++)
 			{
 				do_s32b(&(quest[i].data[j]), flag);
 			}
 
 			/* Init the hooks */
-			if ((flag == LS_LOAD) && (quest[i].type == HOOK_TYPE_C)) quest[i].init(i);
+			if (flag == LS_LOAD)
+			{
+				quest[i].init(i);
+			}
 		}
 
 		/* Position in the wilderness */
@@ -3320,7 +2761,6 @@ static bool do_savefile_aux(int flag)
 			}
 		}
 	}
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Quests");
 
 	/* Load the random artifacts. */
 	if (flag == LS_SAVE) tmp16u = MAX_RANDARTS;
@@ -3358,7 +2798,6 @@ static bool do_savefile_aux(int flag)
 	{
 		do_byte(&(&a_info[i])->cur_num, flag);
 	}
-	if ((flag == LS_LOAD) && arg_fiddle) note("Loaded Artifacts");
 
 	/* Fates */
 	if (flag == LS_SAVE) tmp16u = MAX_FATES;
@@ -3376,7 +2815,6 @@ static bool do_savefile_aux(int flag)
 	{
 		do_fate(i, flag);
 	}
-	if ((flag == LS_LOAD) && arg_fiddle) note("Loaded Fates");
 
 	/* Load the Traps */
 	if (flag == LS_SAVE) tmp16u = max_t_idx;
@@ -3394,7 +2832,6 @@ static bool do_savefile_aux(int flag)
 	{
 		do_byte((byte*)&t_info[i].ident, flag);
 	}
-	if ((flag == LS_LOAD) && (arg_fiddle)) note("Loaded Traps");
 
 	/* inscription knowledge */
 	if (flag == LS_SAVE) tmp16u = MAX_INSCRIPTIONS;
@@ -3410,13 +2847,11 @@ static bool do_savefile_aux(int flag)
 	/* Read the inscription flag */
 	for (i = 0; i < tmp16u; i++)
 		do_byte((byte*)&inscription_info[i].know, flag);
-	if ((flag == LS_LOAD) && arg_fiddle) note("Loaded Inscriptions");
 
 
 	/* Read the extra stuff */
 	if (!do_extra(flag))
 		return FALSE;
-	if ((flag == LS_LOAD) && arg_fiddle) note("Loaded extra information");
 
 
 	/* player_hp array */
@@ -3442,6 +2877,9 @@ static bool do_savefile_aux(int flag)
 	do_byte(&p_ptr->pet_open_doors, flag);
 	do_byte(&p_ptr->pet_pickup_items, flag);
 
+	/* Dripping Tread */
+	do_s16b(&p_ptr->dripping_tread, flag);
+
 	/* Read the inventory */
 	if (!do_inventory(flag) && (flag == LS_LOAD))	/* do NOT reverse this ordering */
 	{
@@ -3450,7 +2888,7 @@ static bool do_savefile_aux(int flag)
 	}
 
 	/* Note that this forbids max_towns from shrinking, but that is fine */
-	C_MAKE(reals, max_towns, bool);
+	C_MAKE(reals, max_towns, bool_);
 
 	/* Find the real towns */
 	if (flag == LS_SAVE)
@@ -3483,32 +2921,7 @@ static bool do_savefile_aux(int flag)
 			do_store(&town_info[z].store[j], flag);
 	}
 
-	C_FREE(reals, max_towns, bool);
-
-	if (flag == LS_SAVE) tmp32u = extra_savefile_parts;
-	do_u32b(&tmp32u, flag);
-	if (flag == LS_SAVE)
-	{
-		/* Save the stuff */
-		process_hooks(HOOK_SAVE_GAME, "()");
-	}
-
-	if (flag == LS_LOAD)
-	{
-		u32b len = tmp32u;
-
-		while (len)
-		{
-			char key_buf[100];
-
-			/* Load a key */
-			load_number_key(key_buf, &tmp32u);
-
-			/* Process it -- the hooks can use it or ignore it */
-			process_hooks(HOOK_LOAD_GAME, "(s,l)", key_buf, tmp32u);
-			len--;
-		}
-	}
+	C_FREE(reals, max_towns, bool_);
 
 	/* I'm not dead yet... */
 	if (!death)
@@ -3553,52 +2966,9 @@ errr rd_savefile(void)
 {
 	errr err = 0;
 
-#ifdef SAFER_PANICS
-	char panic_fname[1024];
-	if (!panicload)
-	{
-#endif /* SAFER_PANICS */
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* The savefile is a binary file */
-		fff = my_fopen(savefile, "rb");
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-#ifdef BZ_SAVES
-		bz_prep(LS_LOAD);
-#endif /* BZ_SAVES */
-
-#ifdef SAFER_PANICS
-	}
-	else
-	{
-		strcpy(panic_fname, savefile);
-		strcat(panic_fname, ".pnc");
-
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
-		/* Open panic save file */
-		fff = my_fopen(panic_fname, "rb");
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
-
-#ifdef BZ_SAVES
-		if (fff)
-		{
-			bz_prep(LS_LOAD);
-		}
-#endif /* BZ_SAVES */
-
-	}
-
-#endif /* SAFER_PANICS */
-
+	/* The savefile is a binary file */
+	fff = my_fopen(savefile, "rb");
+	
 	/* Paranoia */
 	if (!fff) return ( -1);
 
@@ -3609,9 +2979,6 @@ errr rd_savefile(void)
 	if (ferror(fff)) err = -1;
 
 	/* Close the file */
-#ifdef BZ_SAVES
-	bz_done(LS_LOAD);
-#endif /* BZ_SAVES */
 	my_fclose(fff);
 
 	/* Result */
@@ -3651,71 +3018,6 @@ static void morejunk(void)
 	spp_ptr = &class_info[p_ptr->pclass].spec[p_ptr->pspec];
 }
 
-#ifdef BZ_SAVES
-static void do_grid(int flag)
-{
-	int y = 0, x = 0;
-	cave_type *c_ptr;
-	int ymax = cur_hgt, xmax = cur_wid;
-
-	int part; 	/* Which section of the grid we're on */
-
-	my_sentinel("Before grid", 17, flag);
-
-	for (part = 0; part < 9; part++)	/* There are 8 fields to the grid, each stored
-												   in a seperate data structure */
-	{
-		for (y = 0; y < ymax; y++)
-		{
-			for (x = 0; x < xmax; x++)
-			{
-				c_ptr = &cave[y][x];
-				switch (part)
-				{
-				case 0:
-					do_u16b(&c_ptr->info, flag);
-					break;
-
-				case 1:
-					do_byte(&c_ptr->feat, flag);
-					break;
-
-				case 2:
-					do_byte(&c_ptr->mimic, flag);
-					break;
-
-				case 3:
-					do_u16b(&c_ptr->special, flag);
-					break;
-
-				case 4:
-					do_u16b(&c_ptr->special2, flag);
-					break;
-
-				case 5:
-					do_u16b(&c_ptr->t_idx, flag);
-					break;
-
-				case 6:
-					do_u16b(&c_ptr->inscription, flag);
-					break;
-
-				case 7:
-					do_byte(&c_ptr->mana, flag);
-					break;
-
-				case 8:
-					do_u16b(&c_ptr->effect, 12, 0, flag);
-					break;
-				}
-			}
-		}
-	}
-	my_sentinel("In grid", 36, flag);
-}
-#endif /* BZ_SAVES */
-
-#ifndef BZ_SAVES
 static void do_grid(int flag)
 /* Does the grid, RLE, blahblah. RLE sucks. I hate it. */
 {
@@ -3913,8 +3215,6 @@ static void do_grid(int flag)
 	}
 }
 
-#endif /* !BZ_SAVES */
-
 static void my_sentinel(char *place, u16b value, int flag)
 /* This function lets us know exactly where a savefile is
    broken by reading/writing conveniently a sentinel at this
@@ -3937,41 +3237,4 @@ static void my_sentinel(char *place, u16b value, int flag)
 	}
 	note(format("Impossible has occurred")); 	/* Programmer error */
 	exit(0);
-}
-
-/********** Variable savefile stuff **************/
-
-/*
- * Add num slots to the savefile
- */
-void register_savefile(int num)
-{
-	extra_savefile_parts += (num > 0) ? num : 0;
-}
-
-void save_number_key(char *key, u32b val)
-{
-	byte len = strlen(key);
-
-	do_byte(&len, LS_SAVE);
-	while (*key)
-	{
-		do_byte((byte*)key, LS_SAVE);
-		key++;
-	}
-	do_u32b(&val, LS_SAVE);
-}
-
-void load_number_key(char *key, u32b *val)
-{
-	byte len, i = 0;
-
-	do_byte(&len, LS_LOAD);
-	while (i < len)
-	{
-		do_byte((byte*)&key[i], LS_LOAD);
-		i++;
-	}
-	key[i] = '\0';
-	do_u32b(val, LS_LOAD);
 }

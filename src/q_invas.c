@@ -1,7 +1,7 @@
 #undef cquest
 #define cquest (quest[QUEST_INVASION])
 
-bool quest_invasion_gen_hook(char *fmt)
+bool_ quest_invasion_gen_hook(char *fmt)
 {
 	int x, y;
 	int xstart = 2;
@@ -26,9 +26,7 @@ bool quest_invasion_gen_hook(char *fmt)
 	get_mon_num_prep();
 
 	init_flags = INIT_CREATE_DUNGEON;
-	process_dungeon_file_full = TRUE;
-	process_dungeon_file(NULL, "maeglin.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
-	process_dungeon_file_full = FALSE;
+	process_dungeon_file("maeglin.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE, TRUE);
 
 	for (x = 3; x < xstart; x++)
 		for (y = 3; y < ystart; y++)
@@ -45,7 +43,7 @@ bool quest_invasion_gen_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_invasion_ai_hook(char *fmt)
+bool_ quest_invasion_ai_hook(char *fmt)
 {
 	monster_type *m_ptr;
 	s32b m_idx;
@@ -84,9 +82,9 @@ bool quest_invasion_ai_hook(char *fmt)
 
 	return (FALSE);
 }
-bool quest_invasion_turn_hook(char *fmt)
+bool_ quest_invasion_turn_hook(char *fmt)
 {
-	bool old_quick_messages = quick_messages;
+	bool_ old_quick_messages = quick_messages;
 
 	if (cquest.status != QUEST_STATUS_UNTAKEN) return (FALSE);
 	if (p_ptr->lev < 45) return (FALSE);
@@ -102,38 +100,8 @@ bool quest_invasion_turn_hook(char *fmt)
 	cmsg_print(TERM_YELLOW, "A Thunderlord appears in front of you and says:");
 	cmsg_print(TERM_YELLOW, "'Hello, noble hero. I am Liron, rider of Tolan. Turgon, King of Gondolin sent me.'");
 	cmsg_print(TERM_YELLOW, "'Gondolin is being invaded; he needs your help now or everything will be lost.'");
-	cmsg_print(TERM_YELLOW, "'I can bring you to Gondolin, but we must go now.'");
-	/* This is SO important a question that flush pending inputs */
-	flush();
+	cmsg_print(TERM_YELLOW, "'Please come quickly!'");
 
-	if (!get_check("Will you come?"))
-	{
-		cmsg_print(TERM_YELLOW, "'Turgon overestimated you... Now Gondolin will fall.'");
-		cmsg_print(TERM_YELLOW, "'I will return alone and die there. May you be doomed!'");
-
-		cquest.status = QUEST_STATUS_FAILED;
-		town_info[2].destroyed = TRUE;
-
-		quick_messages = old_quick_messages;
-
-		del_hook(HOOK_END_TURN, quest_invasion_turn_hook);
-		process_hooks_restart = TRUE;
-		return (FALSE);
-	}
-	cmsg_print(TERM_YELLOW, "'You made the right decision! Quickly, jump on Tolan!'");
-	cmsg_print(TERM_YELLOW, "'Here we are: Gondolin. You must speak with Turgon now.'");
-
-	p_ptr->wild_mode = FALSE;
-	p_ptr->wilderness_x = 49;
-	p_ptr->wilderness_y = 11;
-	p_ptr->town_num = 2;
-	p_ptr->oldpx = p_ptr->px = 117;
-	p_ptr->oldpy = p_ptr->py = 24;
-	dun_level = 0;
-	p_ptr->leaving = TRUE;
-
-	cmsg_print(TERM_YELLOW, "'Turgon hails you.'");
-	quest_describe(QUEST_INVASION);
 	cquest.status = QUEST_STATUS_TAKEN;
 
 	quick_messages = old_quick_messages;
@@ -143,7 +111,7 @@ bool quest_invasion_turn_hook(char *fmt)
 	process_hooks_restart = TRUE;
 	return (FALSE);
 }
-bool quest_invasion_dump_hook(char *fmt)
+bool_ quest_invasion_dump_hook(char *fmt)
 {
 	if (cquest.status == QUEST_STATUS_FAILED)
 	{
@@ -155,7 +123,7 @@ bool quest_invasion_dump_hook(char *fmt)
 	}
 	return (FALSE);
 }
-bool quest_invasion_death_hook(char *fmt)
+bool_ quest_invasion_death_hook(char *fmt)
 {
 	s32b r_idx, m_idx;
 
@@ -175,7 +143,7 @@ bool quest_invasion_death_hook(char *fmt)
 
 	return FALSE;
 }
-bool quest_invasion_stair_hook(char *fmt)
+bool_ quest_invasion_stair_hook(char *fmt)
 {
 	cptr down;
 
@@ -218,7 +186,7 @@ bool quest_invasion_stair_hook(char *fmt)
 
 	return TRUE;
 }
-bool quest_invasion_init_hook(int q_idx)
+bool_ quest_invasion_init_hook(int q_idx)
 {
 	add_hook(HOOK_END_TURN, quest_invasion_turn_hook, "invasion_turn");
 	add_hook(HOOK_CHAR_DUMP, quest_invasion_dump_hook, "invasion_dump");

@@ -14,6 +14,12 @@
  */
 
 
+/*
+ * C++ guard.
+ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * First, include the low-level includes.  Be sure to edit "h-config.h"
@@ -30,7 +36,6 @@
 #include "z-form.h"
 #include "z-rand.h"
 #include "z-term.h"
-#include "z-sock.h"
 
 
 /*
@@ -40,10 +45,17 @@
 
 
 /*
+ * SGLIB
+ */
+#include "sglib.h"
+
+
+/*
  * Now, include the define's, the type's, and the extern's
  */
 #include "defines.h"
 #include "types.h"
+#include "spell_type_fwd.h"
 #include "externs.h"
 #include "plots.h"
 
@@ -95,6 +107,9 @@
  *	 of the author Robert Alan Koeneke.
  */
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif
 

@@ -1,7 +1,7 @@
 #undef cquest
 #define cquest (quest[QUEST_WOLVES])
 
-bool quest_wolves_gen_hook(char *fmt)
+bool_ quest_wolves_gen_hook(char *fmt)
 {
 	int x, y, i;
 	int xstart = 2;
@@ -31,19 +31,20 @@ bool quest_wolves_gen_hook(char *fmt)
 	get_mon_num_prep();
 
 	init_flags = INIT_CREATE_DUNGEON;
-	process_dungeon_file(NULL, "wolves.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE);
+	process_dungeon_file("wolves.map", &ystart, &xstart, cur_hgt, cur_wid, TRUE, FALSE);
 	dungeon_flags2 |= DF2_NO_GENO;
 
 	/* Place some random wolves */
 	for (i = damroll(4, 4); i > 0; )
 	{
-		int flags;
+		int m_idx, flags;
 		y = rand_int(21) + 3;
 		x = rand_int(31) + 3;
 		flags = f_info[cave[y][x].feat].flags1;
 		if (!(flags & FF1_PERMANENT) && (flags & FF1_FLOOR))
 		{
-			place_monster_one(y, x, 196, 0, magik(50), MSTATUS_ENEMY);
+			m_idx = place_monster_one(y, x, 196, 0, magik(50), MSTATUS_ENEMY);
+			if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 			--i;
 		}
 	}
@@ -51,13 +52,14 @@ bool quest_wolves_gen_hook(char *fmt)
 	/* Place some random wargs */
 	for (i = damroll(4, 4); i > 0; )
 	{
-		int flags;
+		int m_idx, flags;
 		y = rand_int(21) + 3;
 		x = rand_int(31) + 3;
 		flags = f_info[cave[y][x].feat].flags1;
 		if (!(flags & FF1_PERMANENT) && (flags & FF1_FLOOR))
 		{
-			place_monster_one(y, x, 257, 0, magik(50), MSTATUS_ENEMY);
+			m_idx = place_monster_one(y, x, 257, 0, magik(50), MSTATUS_ENEMY);
+			if (m_idx) m_list[m_idx].mflag |= MFLAG_QUEST;
 			--i;
 		}
 	}
@@ -67,7 +69,7 @@ bool quest_wolves_gen_hook(char *fmt)
 	return TRUE;
 }
 
-bool quest_wolves_death_hook(char *fmt)
+bool_ quest_wolves_death_hook(char *fmt)
 {
 	int i, mcnt = 0;
 
@@ -99,7 +101,7 @@ bool quest_wolves_death_hook(char *fmt)
 	return FALSE;
 }
 
-bool quest_wolves_finish_hook(char *fmt)
+bool_ quest_wolves_finish_hook(char *fmt)
 {
 	s32b q_idx;
 
@@ -116,7 +118,7 @@ bool quest_wolves_finish_hook(char *fmt)
 	return TRUE;
 }
 
-bool quest_wolves_init_hook(int q_idx)
+bool_ quest_wolves_init_hook(int q_idx)
 {
 	if ((cquest.status >= QUEST_STATUS_UNTAKEN) && (cquest.status < QUEST_STATUS_FINISHED))
 	{

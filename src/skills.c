@@ -31,7 +31,7 @@ void increase_skill(int i, s16b *invest)
 	if (s_info[i].value >= SKILL_MAX) return;
 
 	/* Cannot allocate more than player level + max_skill_overage levels */
-	call_lua("get_module_info", "(s)", "d", "max_skill_overage", &max_skill_overage);
+	max_skill_overage = modules[game_module_idx].skills.max_skill_overage;
 	if (((s_info[i].value + s_info[i].mod) / SKILL_STEP) >= (p_ptr->lev + max_skill_overage + 1))
 	{
 		int hgt, wid;
@@ -156,7 +156,7 @@ int get_idx(int i)
 	return (0);
 }
 
-static bool is_known(int s_idx)
+static bool_ is_known(int s_idx)
 {
 	int i;
 
@@ -181,7 +181,7 @@ static bool is_known(int s_idx)
  *
  */
 void init_table_aux(int table[MAX_SKILLS][2], int *idx, int father, int lev,
-                    bool full)
+                    bool_ full)
 {
 	int j, i;
 
@@ -200,14 +200,14 @@ void init_table_aux(int table[MAX_SKILLS][2], int *idx, int father, int lev,
 }
 
 
-void init_table(int table[MAX_SKILLS][2], int *max, bool full)
+void init_table(int table[MAX_SKILLS][2], int *max, bool_ full)
 {
 	*max = 0;
 	init_table_aux(table, max, -1, 0, full);
 }
 
 
-bool has_child(int sel)
+bool_ has_child(int sel)
 {
 	int i;
 
@@ -257,11 +257,10 @@ void dump_skills(FILE *fff)
 			strcat(buf, format(" - %s", s_info[i].name + s_name));
 		}
 
-		fprintf(fff, "%-49s%s%02ld.%03ld [%01ld.%03ld]",
+		fprintf(fff, "%-49s%s%06.3f [%05.3f]",
 		        buf, s_info[i].value < 0 ? "-" : " ",
-			ABS(s_info[i].value) / SKILL_STEP,
-			ABS(s_info[i].value) % SKILL_STEP,
-		        s_info[i].mod / 1000, s_info[i].mod % 1000);
+			((double) ABS(s_info[i].value)) / SKILL_STEP,
+		        ((double) s_info[i].mod) / 1000);
 	}
 
 	fprintf(fff, "\n");
@@ -338,7 +337,7 @@ void print_skills(int table[MAX_SKILLS][2], int max, int sel, int start)
 /*
  * Checks various stuff to do when skills change, like new spells, ...
  */
-void recalc_skills(bool init)
+void recalc_skills(bool_ init)
 {
 	static int thaum_level = 0;
 
@@ -367,7 +366,16 @@ void recalc_skills(bool init)
 				msg_format("You have gained %d new thaumaturgy spells.", thaum_gain);
 		}
 
+		/* Antimagic means you don't believe in gods. */
+		if ((p_ptr->pgod != GOD_NONE) &&
+		    (s_info[SKILL_ANTIMAGIC].value > 0))
+		{
+			msg_print("You no longer believe.");
+			abandon_god(GOD_ALL);
+		}
+
 		process_hooks(HOOK_RECALC_SKILLS, "()");
+		process_hooks_new(HOOK_RECALC_SKILLS, NULL, NULL);
 
 		/* Update stuffs */
 		p_ptr->update |= (PU_BONUS | PU_HP | PU_MANA | PU_SPELLS | PU_POWERS |
@@ -545,8 +553,10 @@ void do_cmd_skill()
 			if (wizard && (c == '-')) skill_bonus[table[sel][0]] -= SKILL_STEP;
 
 			/* Contextual help */
-			if (c == '?') exec_lua(format("ingame_help('select_context', 'skill', '%s')", s_info[table[sel][0]].name + s_name));
-			;
+			if (c == '?')
+			{
+				help_skill(s_info[table[sel][0]].name + s_name);
+			}
 
 			/* Handle boundaries and scrolling */
 			if (sel < 0) sel = max - 1;
@@ -614,7 +624,7 @@ char *melee_names[MAX_MELEE] =
 	"Barehanded combat",
 	"Bearform combat",
 };
-static bool melee_bool[MAX_MELEE];
+static bool_ melee_bool[MAX_MELEE];
 static int melee_num[MAX_MELEE];
 
 s16b get_melee_skill()
@@ -744,12 +754,12 @@ void select_default_melee()
 /*
  * Print a batch of skills.
  */
-static void print_skill_batch(int *p, cptr *p_desc, int start, int max, bool mode)
+static void print_skill_batch(int *p, cptr *p_desc, int start, int max)
 {
 	char buff[80];
 	int i = start, j = 0;
 
-	if (mode) prt(format("         %-31s", "Name"), 1, 20);
+	prt(format("         %-31s", "Name"), 1, 20);
 
 	for (i = start; i < (start + 20); i++)
 	{
@@ -760,10 +770,10 @@ static void print_skill_batch(int *p, cptr *p_desc, int start, int max, bool mod
 		else
 			sprintf(buff, "  %c - %d) %-30s", I2A(j), p[i], "Change melee style");
 
-		if (mode) prt(buff, 2 + j, 20);
+		prt(buff, 2 + j, 20);
 		j++;
 	}
-	if (mode) prt("", 2 + j, 20);
+	prt("", 2 + j, 20);
 	prt(format("Select a skill (a-%c), @ to select by name, +/- to scroll:", I2A(j - 1)), 0, 0);
 }
 
@@ -772,7 +782,6 @@ int do_cmd_activate_skill_aux()
 	char which;
 	int max = 0, i, start = 0;
 	int ret;
-	bool mode = FALSE;
 	int *p;
 	cptr *p_desc;
 
@@ -793,7 +802,7 @@ int do_cmd_activate_skill_aux()
 		if (s_info[i].action_mkey && s_info[i].value && ((!s_info[i].hidden) || (i == SKILL_LEARN)))
 		{
 			int j;
-			bool next = FALSE;
+			bool_ next = FALSE;
 
 			/* Already got it ? */
 			for (j = 0; j < max; j++)
@@ -816,7 +825,7 @@ int do_cmd_activate_skill_aux()
 		if (ab_info[i].action_mkey && ab_info[i].acquired)
 		{
 			int j;
-			bool next = FALSE;
+			bool_ next = FALSE;
 
 			/* Already got it ? */
 			for (j = 0; j < max; j++)
@@ -845,19 +854,13 @@ int do_cmd_activate_skill_aux()
 
 	while (1)
 	{
-		print_skill_batch(p, p_desc, start, max, mode);
+		print_skill_batch(p, p_desc, start, max);
 		which = inkey();
 
 		if (which == ESCAPE)
 		{
 			ret = -1;
 			break;
-		}
-		else if (which == '*' || which == '?' || which == ' ')
-		{
-			mode = (mode) ? FALSE : TRUE;
-			Term_load();
-			character_icky = FALSE;
 		}
 		else if (which == '+')
 		{
@@ -925,7 +928,7 @@ int do_cmd_activate_skill_aux()
 void do_cmd_activate_skill()
 {
 	int x_idx;
-	bool push = TRUE;
+	bool_ push = TRUE;
 
 	/* Get the skill, if available */
 	if (repeat_pull(&x_idx))
@@ -1046,15 +1049,103 @@ void do_cmd_activate_skill()
 	case MKEY_PIERCING:
 		do_cmd_set_piercing();
 		break;
+	case MKEY_DEATH_TOUCH:
+	{
+		if (p_ptr->csp > 40)
+		{
+			increase_mana(-40);
+			set_project(randint(30) + 10,
+				    GF_INSTA_DEATH,
+				    1,
+				    0,
+				    PROJECT_STOP | PROJECT_KILL);
+			energy_use = 100;
+		}
+		else
+		{
+			msg_print("You need at least 40 mana.");
+		}
+		break;
+	}
+	case MKEY_GEOMANCY:
+	{
+		s32b s = -1;
+		object_type *o_ptr = NULL;
+
+		/* No magic */
+		if (p_ptr->antimagic > 0)
+		{
+			msg_print("Your anti-magic field disrupts any magic attempts.");
+			break;
+		}
+
+		o_ptr = get_object(INVEN_WIELD);
+		if ((o_ptr->k_idx <= 0) ||
+		    (o_ptr->tval != TV_MSTAFF))
+		{
+			msg_print("You must wield a magestaff to use Geomancy.");
+			break;
+		}
+
+		s = get_school_spell("cast", BOOK_GEOMANCY);
+		if (s >= 0)
+		{
+			lua_cast_school_spell(s, FALSE);
+		}
+
+		break;
+	}
+	case MKEY_REACH_ATTACK:
+	{
+		object_type *o_ptr = NULL;
+		int dir, dy, dx, targetx, targety, max_blows, flags;
+
+		o_ptr = get_object(INVEN_WIELD);
+		if (o_ptr->tval == TV_POLEARM)
+		{
+			msg_print("You will need a long polearm for this!");
+			return;
+		}
+
+		if (!get_rep_dir(&dir))
+		{
+			return;
+		}
+
+		dy = ddy[dir];
+		dx = ddx[dir];
+		dy = dy * 2;
+		dx = dx * 2;
+		targety = p_ptr->py + dy;
+		targetx = p_ptr->px + dx;
+
+		max_blows = get_skill_scale(SKILL_POLEARM, p_ptr->num_blow / 2);
+		if (max_blows == 0)
+		{
+			max_blows = 1;
+		}
+
+		energy_use = energy_use + 200;
+
+		flags = PROJECT_BEAM | PROJECT_KILL;
+		if (get_skill(SKILL_POLEARM) < 40)
+		{
+			flags |= PROJECT_STOP;
+		}
+
+		project(0, 0, targety, targetx,
+			max_blows, GF_ATTACK, flags);
+
+		break;
+	}
 	default:
-		process_hooks(HOOK_MKEY, "(d)", x_idx);
 		break;
 	}
 }
 
 
 /* Which magic forbids non FA gloves */
-bool forbid_gloves()
+bool_ forbid_gloves()
 {
 	if (get_skill(SKILL_SORCERY)) return (TRUE);
 	if (get_skill(SKILL_MANA)) return (TRUE);
@@ -1067,144 +1158,12 @@ bool forbid_gloves()
 }
 
 /* Which gods forbid edged weapons */
-bool forbid_non_blessed()
+bool_ forbid_non_blessed()
 {
 	GOD(GOD_ERU) return (TRUE);
 	return (FALSE);
 }
 
-
-
-
-/*
- * The autoskiller gets fed with the desired skill values at level 50 and determines
- * where to invest each levels
- */
-
-/* Checks if a given autoskill chart is realisable */
-int validate_autoskiller(s32b *ideal)
-{
-	int i;
-	s32b count = 0;
-
-	for (i = 0; i < max_s_idx; i++)
-	{
-		s32b z, c;
-
-		skill_type *s_ptr = &s_info[i];
-
-		if (!ideal[i]) continue;
-
-		/* How much */
-		z = (ideal[i] * SKILL_STEP) - s_ptr->value;
-
-		/* How many points will we need to get there ? */
-		if (s_ptr->mod)
-			c = z / s_ptr->mod;
-		else
-			c = 99999;
-		count += c;
-	}
-	/* DGDGDGDG: I dont work, fix me */
-	/*        return (SKILL_NB_BASE * 49) - count;*/
-	return 0;
-}
-
-void autoskiller_level(s32b *ideal)
-{
-#if 0
-	/* DGDGDGDG */
-	int chart[196];
-	int final[196];
-	int ideal[3] = {50, 30, 25};
-	int real[3] = {0, 0, 0};
-	int mod[3] = {450, 1000, 1100};
-	float pl[3], left[3] = {0, 0, 0}, finalization = 1;
-	int c[3], z;
-	int i, max = 0, ok = 3, a;
-
-	for (i = 0; i < 3; i++)
-	{
-		c[i] = (ideal[i] * 1000) / mod[i];
-		printf("point need c[%d] = %d\n", i, c[i]);
-		max += c[i];
-
-		pl[i] = (float)c[i] / 50.0;
-		printf("pl[%d] = %f\n", i, pl[i]);
-	}
-	printf("skill balance %d\n", 196 - max);
-
-	for (i = 0; i < 196; i++)
-	{
-		chart[i] = -1;
-	}
-
-	a = 0;
-	while ((a < 196) && (ok))
-	{
-		int z = 0;
-
-		for (z = 0; z < 3; z++)
-		{
-			int tmp, ii;
-
-			if (real[z] == c[z])
-				continue;
-			left[z] += pl[z];
-			tmp = left[z];
-			left[z] -= tmp;
-			printf("skill %02d: left %f tmp %d\n", z, left[z], tmp);
-
-			while (tmp >= 1)
-			{
-				chart[a++] = z;
-				real[z]++;
-				tmp--;
-				if (real[z] == c[z])
-				{
-					ok--;
-					break;
-				}
-				if (a == 196)
-				{
-					ok = 0;
-					break;
-				}
-			}
-			if (!ok) break;
-		}
-	}
-	printf("ok %d, a %d interval %f\n", ok, a, (float)a / 196);
-	real[0] = real[1] = real[2] = 0;
-	for (i = 0; i < 196; i++)
-	{
-		real[chart[i]]++;
-	}
-	z = 0;
-	i = 0;
-	while (z < a)
-	{
-		if (finalization > 1)
-		{
-			final[i] = chart[z++];
-			finalization--;
-		}
-		else
-			final[i] = -1;
-		finalization += ((float)a / 196);
-		i++;
-	}
-	for (z = 0; z < 3; z++)
-	{
-		printf("skill %d real %d ideal %d\n", z, real[z], c[z]);
-	}
-
-	for (i = 2; i <= 50; i++)
-	{
-		printf("level %02d, skills %02d %02d %02d %02d\n", i, final[i * 4], final[i * 4 + 1], final[i * 4 + 2], final[i * 4 + 3]);
-	}
-#endif
-}
 
 /*
  * Gets the base value of a skill, given a race/class/...
@@ -1281,10 +1240,10 @@ void init_skill(s32b value, s32b mod, int i)
 
 void do_get_new_skill()
 {
-	char *items[4];
-	int skl[4];
-	s32b val[4], mod[4];
-	bool used[MAX_SKILLS];
+	char *items[LOST_SWORD_NSKILLS];
+	int skl[LOST_SWORD_NSKILLS];
+	s32b val[LOST_SWORD_NSKILLS], mod[LOST_SWORD_NSKILLS];
+	bool_ used[MAX_SKILLS];
 	int available_skills[MAX_SKILLS];
 	int max = 0, max_a = 0, res, i;
 
@@ -1309,8 +1268,8 @@ void do_get_new_skill()
 	/* Count the number of available skills */
 	while (available_skills[max_a] != -1) max_a++;
 
-	/* Get 4 skills */
-	for (max = 0; max < 4; max++)
+	/* Get LOST_SWORD_NSKILLS skills */
+	for (max = 0; max < LOST_SWORD_NSKILLS; max++)
 	{
 		int i;
 		skill_type *s_ptr;
@@ -1361,13 +1320,16 @@ void do_get_new_skill()
 
 	while (TRUE)
 	{
-		res = ask_menu("Choose a skill to learn(a-d to choose, ESC to cancel)?", (char **)items, 4);
+		char last = 'a' + (LOST_SWORD_NSKILLS-1);
+		char buf[80];
+		sprintf(buf, "Choose a skill to learn(a-%c to choose, ESC to cancel)?", last);
+		res = ask_menu(buf, (char **)items, LOST_SWORD_NSKILLS);
 
 		/* Ok ? lets learn ! */
 		if (res > -1)
 		{
 			skill_type *s_ptr;
-			bool oppose = FALSE;
+			bool_ oppose = FALSE;
 			int oppose_skill = -1;
 
 			/* Check we don't oppose an existing skill */
@@ -1420,7 +1382,7 @@ void do_get_new_skill()
 	}
 
 	/* Free them ! */
-	for (max = 0; max < 4; max++)
+	for (max = 0; max < LOST_SWORD_NSKILLS; max++)
 	{
 		string_free(items[max]);
 	}
@@ -1456,13 +1418,13 @@ s16b find_ability(cptr name)
 /*
  * Do the player have the ability
  */
-bool has_ability(int ab)
+bool_ has_ability(int ab)
 {
 	return ab_info[ab].acquired;
 }
 
 /* Do we meet the requirements */
-bool can_learn_ability(int ab)
+bool_ can_learn_ability(int ab)
 {
 	ability_type *ab_ptr = &ab_info[ab];
 	int i;
@@ -1676,11 +1638,7 @@ void do_cmd_ability()
 	/* Initialise the abilities list */
 	for (i = 0; i < max_ab_idx; i++)
 	{
-#if 0 /* Only show learnable */
-		if (ab_info[i].name && ((can_learn_ability(i) || has_ability(i)) || wizard))
-#else /* Show all */
 if (ab_info[i].name)
-#endif
 			add_sorted_ability(table, &max, i);
 	}
 
@@ -1734,8 +1692,10 @@ if (ab_info[i].name)
 			if (wizard && (c == '-')) ab_info[table[sel]].acquired = FALSE;
 
 			/* Contextual help */
-			if (c == '?') exec_lua(format("ingame_help('select_context', 'ability', '%s')", ab_info[table[sel]].name + ab_name));
-			;
+			if (c == '?')
+			{
+				help_ability(ab_info[table[sel]].name + ab_name);
+			}
 
 			/* Handle boundaries and scrolling */
 			if (sel < 0) sel = max - 1;

@@ -44,50 +44,12 @@
  * z-virt macro names. Find C_FREE/C_KILL and replace them
  * with FREE/KILL, which takes one pointer parameter.
  *
- * [Z]-based variants (Gum and Cth, for example) usually need
- * ANG293_COMPAT, ANG291_COMPAT and ANG281_RESET_VISUALS.
- *
- * [O] needs ANG293_COMPAT and ZANG_SAVE_GAME.
- *
  * ZAngband has its own enhanced main-gtk.c as mentioned above, and
  * you *should* use it :-)
  *
- * ANG291_COMPAT does not include Angband 2.9.x's gamma correction code.
- * If you like to use SUPPORT_GAMMA, copy the code bracketed
- * inside of #ifdef SUPPORT_GAMMA in util.c of Angband 2.9.1 or greater.
  */
-#define TOME
 
-#ifdef TOME
-# define ANG293_COMPAT	/* Requires V2.9.3 compatibility code */
-# define ANG291_COMPAT	/* Requires V2.9.1 compatibility code */
-# define ANG281_RESET_VISUALS	/* The old style reset_visuals() */
-# define INTERACTIVE_GAMMA	/* Supports interactive gamma correction */
-# define SAVEFILE_SCREEN	/* New/Open integrated into the game */
-# define USE_DOUBLE_TILES	/* Mogami's bigtile patch */
-#endif /* TOME */
-
-/*
- * Some examples
- */
-#ifdef ANGBAND300
-# define can_save TRUE	/* Mimick the short-lived flag */
-# define C_FREE(P, N, T)	FREE(P)	/* Emulate the long-lived macro */
-# define USE_TRANSPARENCY	/* Because it's default now */
-#endif /* ANGBAND300 */
-
-#ifdef GUMBAND
-# define ANG293_COMPAT	/* Requires V2.9.3 compatibility code */
-# define ANG291_COMPAT	/* Requires V2.9.1 compatibility code */
-# define ANG281_RESET_VISUALS	/* The old style reset_visuals() */
-# define OLD_SAVEFILE_CODE /* See also SAVEFILE_MUTABLE in files.c */
-# define NO_REDRAW_SECTION	/* Doesn't have Term_redraw_section() */
-#endif /* GUMBAND */
-
-#ifdef OANGBAND
-# define ANG293_COMPAT	/* Requires V2.9.3 compatibility code */
-# define ZANG_SAVE_GAME	/* do_cmd_save_game with auto_save parameter */
-#endif /* OANGBAND */
+#define USE_DOUBLE_TILES	/* Mogami's bigtile patch */
 
 
 #ifdef USE_GTK2
@@ -109,14 +71,6 @@
 #ifndef NAME_MAX
 #define	NAME_MAX	_POSIX_NAME_MAX
 #endif
-
-
-/*
- * Include some helpful X11 code.
- */
-#ifndef ANG293_COMPAT
-# include "maid-x11.h"
-#endif /* !ANG293_COMPAT */
 
 
 /*
@@ -172,7 +126,7 @@ struct term_data
 	GdkFont *font;
 	GdkGC *gc;
 
-	bool shown;
+	bool_ shown;
 	byte last_attr;
 
 	int font_wid;
@@ -187,10 +141,8 @@ struct term_data
 	int tile_hgt;
 
 	GdkRGBImage *tiles;
-# ifdef USE_TRANSPARENCY
 	guint32 bg_pixel;
 	GdkRGBImage *trans_buf;
-# endif  /* USE_TRANSPARENCY */
 
 #endif /* USE_GRAPHICS */
 
@@ -217,36 +169,6 @@ if ((td)->backing_store) gdk_draw_pixmap( \
 (hgt) * (td)->font_hgt)
 
 
-#if 0
-
-/* Compile time option version */
-
-# ifdef USE_BACKING_STORE
-
-# define TERM_DATA_DRAWABLE(td) (td)->backing_store
-
-# define TERM_DATA_REFRESH(td, x, y, wid, hgt) \
-gdk_draw_pixmap( \
-(td)->drawing_area->window, \
-(td)->gc, \
-(td)->backing_store, \
-(x) * (td)->font_wid, \
-(y) * (td)->font_hgt, \
-(x) * (td)->font_wid, \
-(y) * (td)->font_hgt, \
-(wid) * (td)->font_wid, \
-(hgt) * (td)->font_hgt)
-
-# else /* USE_BACKING_STORE */
-
-# define TERM_DATA_DRAWABLE(td) (td)->drawing_area->window
-# define TERM_DATA_REFRESH(td, x, y, wid, hgt)
-
-# endif  /* USE_BACKING_STORE */
-
-#endif /* 0 */
-
-
 /*
  * An array of "term_data" structures, one for each "sub-window"
  */
@@ -267,7 +189,7 @@ static guint32 angband_colours[16];
 /*
  * Set to TRUE when a game is in progress
  */
-static bool game_in_progress = FALSE;
+static bool_ game_in_progress = FALSE;
 
 
 /*
@@ -277,14 +199,12 @@ static bool game_in_progress = FALSE;
  * with the MIT Shm extention which is usually active if you run
  * Angband locally, because it reduces amount of memory-to-memory copy.
  */
-static bool use_backing_store = TRUE;
+static bool_ use_backing_store = TRUE;
 
 
 
 
 /**** Vanilla compatibility functions ****/
-
-#ifdef ANG293_COMPAT
 
 /*
  * Look up some environment variables to find font name for each window.
@@ -316,27 +236,11 @@ static cptr get_default_font(int term)
 }
 
 
-# ifndef SAVEFILE_SCREEN
-
-/*
- * In [V]2.9.3, this frees all dynamically allocated memory
- */
-static void cleanup_angband(void)
-{
-	/* XXX XXX XXX */
-}
-
-# endif  /* !SAVEFILE_SCREEN */
-
 /*
  * New global flag to indicate if it's safe to save now
  */
 #define can_save TRUE
 
-#endif /* ANG293_COMPAT */
-
-
-#ifdef ANG291_COMPAT
 
 /*
  * The standard game uses this to implement lighting effects
@@ -345,9 +249,7 @@ static void cleanup_angband(void)
  * Because of the way it is implemented in X11 ports,
  * we can set this to TRUE even if we are using the 8x8 tileset.
  */
-static bool use_transparency = TRUE;
-
-#endif /* ANG291_COMPAT */
+static bool_ use_transparency = TRUE;
 
 
 
@@ -357,11 +259,7 @@ static bool use_transparency = TRUE;
 /*
  * Hook to "release" memory
  */
-#ifdef ANGBAND300
-static vptr hook_rnfree(vptr v)
-#else
 static vptr hook_rnfree(vptr v, huge size)
-#endif /* ANGBAND300 */
 {
 	/* Dispose */
 	g_free(v);
@@ -384,118 +282,6 @@ static vptr hook_ralloc(huge size)
 
 /**** Low level routines - colours and graphics ****/
 
-#ifdef SUPPORT_GAMMA
-
-/*
- * When set to TRUE, indicates that we can use gamma_table
- */
-static bool gamma_table_ready = FALSE;
-
-
-# ifdef INTERACTIVE_GAMMA
-
-/*
- * Initialise the gamma-correction table for current gamma_val
- * - interactive version
- */
-static void setup_gamma_table(void)
-{
-	static u16b old_gamma_val = 0;
-
-	/* Don't have to rebuild the table */
-	if (gamma_val == old_gamma_val) return;
-
-	/* Temporarily inactivate the table */
-	gamma_table_ready = FALSE;
-
-	/* Validate gamma_val */
-	if ((gamma_val <= 0) || (gamma_val >= 256))
-	{
-		/* Reset */
-		old_gamma_val = gamma_val = 0;
-
-		/* Leave it inactive */
-		return;
-	}
-
-	/* (Re)build the gamma table */
-	build_gamma_table(gamma_val);
-
-	/* Remember the gamma value used */
-	old_gamma_val = gamma_val;
-
-	/* Activate the table */
-	gamma_table_ready = TRUE;
-}
-
-# else /* INTERACTIVE_GAMMA */
-
-/*
- * Initialise the gamma-correction table if environment variable
- * ANGBAND_X11_GAMMA is set and contains a meaningful value
- *
- * Restored for cross-variant compatibility
- */
-static void setup_gamma_table(void)
-{
-	cptr tmp;
-	int gamma_val;
-
-
-	/* The table's already set up */
-	if (gamma_table_ready) return;
-
-	/*
-	 * XXX XXX It's documented nowhere, but ANGBAND_X11_GAMMA is
-	 * 256 * (1 / gamma), rounded to integer. A recommended value
-	 * is 183, which is an approximation of the Macintosh hardware
-	 * gamma of 1.4.
-	 *
-	 *   gamma	ANGBAND_X11_GAMMA
-	 *   -----	-----------------
-	 *   1.2	213
-	 *   1.25	205
-	 *   1.3	197
-	 *   1.35	190
-	 *   1.4	183
-	 *   1.45	177
-	 *   1.5	171
-	 *   1.6	160
-	 *   1.7	151
-	 *   ...
-	 *
-	 * XXX XXX The environment variable, or better,
-	 * the interact with colours command should allow users
-	 * to specify gamma values (or gamma value * 100).
-	 */
-	tmp = getenv("ANGBAND_X11_GAMMA");
-
-	/* Nothing to do */
-	if (tmp == NULL) return;
-
-	/* Extract the value */
-	gamma_val = atoi(tmp);
-
-	/*
-	 * Only need to build the table if gamma exists and set to
-	 * a meaningful value.
-	 *
-	 * XXX It may be a good idea to prevent use of very high gamma values,
-	 * say, greater than 2.5, which is gamma of normal CRT display IIRC.
-	 */
-	if ((gamma_val <= 0) || (gamma_val >= 256)) return;
-
-	/* Build the gamma correction table */
-	build_gamma_table(gamma_val);
-
-	/* The table is properly set up */
-	gamma_table_ready = TRUE;
-}
-
-# endif  /* INTERACTIVE_GAMMA */
-
-#endif /* SUPPORT_GAMMA */
-
 
 /*
  * Remeber RGB values for sixteen Angband colours, in a format
@@ -512,13 +298,6 @@ static void init_colours(void)
 	int i;
 
 
-#ifdef SUPPORT_GAMMA
-
-	/* (Re)build gamma table if necessary */
-	setup_gamma_table();
-
-#endif /* SUPPORT_GAMMA */
-
 	/* Process each colour */
 	for (i = 0; i < 16; i++)
 	{
@@ -528,18 +307,6 @@ static void init_colours(void)
 		red = angband_color_table[i][1];
 		green = angband_color_table[i][2];
 		blue = angband_color_table[i][3];
-
-#ifdef SUPPORT_GAMMA
-
-		/* Hack -- Gamma Correction */
-		if (gamma_table_ready)
-		{
-			red = gamma_table[red];
-			green = gamma_table[green];
-			blue = gamma_table[blue];
-		}
-
-#endif /* SUPPORT_GAMMA */
 
 		/* Remember a GdkRGB value, that is 0xRRGGBB */
 		angband_colours[i] = (red << 16) | (green << 8) | blue;
@@ -578,8 +345,8 @@ static int graf_mode_request = GRAF_MODE_NONE;
 /*
  * Use smooth rescaling?
  */
-static bool smooth_rescaling = TRUE;
-static bool smooth_rescaling_request = TRUE;
+static bool_ smooth_rescaling = TRUE;
+static bool_ smooth_rescaling_request = TRUE;
 
 /*
  * Dithering
@@ -589,7 +356,7 @@ static GdkRgbDither dith_mode = GDK_RGB_DITHER_NORMAL;
 /*
  * Need to reload and resize tiles when fonts are changed.
  */
-static bool resize_request = FALSE;
+static bool_ resize_request = FALSE;
 
 /*
  * Numbers of columns and rows in current tileset
@@ -699,41 +466,6 @@ static void gdk_rgb_image_destroy(
 	/* Free the structure */
 	g_free(im);
 }
-
-
-#if 0
-
-/*
- * Unref a GdkRGBImage
- */
-static void gdk_rgb_image_unref(
-        GdkRGBImage *im)
-{
-	/* Paranoia */
-	g_return_if_fail(im != NULL);
-
-	/* Decrease reference count by 1 */
-	im->ref_count--;
-
-	/* Free if nobody's using it */
-	if (im->ref_count <= 0) gdk_rgb_image_destroy(im);
-}
-
-
-/*
- * Reference a GdkRGBImage
- */
-static void gdk_rgb_image_ref(
-        GdkRGBImage *im)
-{
-	/* Paranoia */
-	g_return_if_fail(im != NULL);
-
-	/* Increase reference count by 1 */
-	im->ref_count++;
-}
-
-#endif /* 0 */
 
 
 /*
@@ -890,7 +622,7 @@ static void get_scaled_row(
 	guint32 pix;
 	rgb_type prev;
 	rgb_type next;
-	bool get_next_pix;
+	bool_ get_next_pix;
 
 	/* Unscaled */
 	if (iw == ow)
@@ -1047,18 +779,6 @@ static void put_rgb_scan(
 		g = (scan[xi].green + adj) / div;
 		b = (scan[xi].blue + adj) / div;
 
-#ifdef SUPPORT_GAMMA
-
-		/* Apply gamma correction if requested and available */
-		if (gamma_table_ready)
-		{
-			r = gamma_table[r];
-			g = gamma_table[g];
-			b = gamma_table[b];
-		}
-
-#endif /* SUPPORT_GAMMA */
-
 		/* Make a (virtual) 24-bit pixel */
 		pix = (r << 16) | (g << 8) | (b);
 
@@ -1098,7 +818,7 @@ static void scale_icon(
 	rgb_type next[MAX_ICON_WIDTH];
 	rgb_type temp[MAX_ICON_WIDTH];
 
-	bool get_next_row;
+	bool_ get_next_row;
 
 	/* get divider value for the horizontal scaling: */
 	if (ix == ox)
@@ -1315,54 +1035,11 @@ static void copy_pixels(
 	/* Copy to the image */
 	for (i = 0; i < wid; i++)
 	{
-#ifdef SUPPORT_GAMMA
-
-		if (gamma_table_ready)
-		{
-			*dst++ = gamma_table[src[3 * xoffsets[i]]];
-			*dst++ = gamma_table[src[3 * xoffsets[i] + 1]];
-			*dst++ = gamma_table[src[3 * xoffsets[i] + 2]];
-
-			continue;
-		}
-
-#endif /* SUPPORT_GAMMA */
-
 		*dst++ = src[3 * xoffsets[i]];
 		*dst++ = src[3 * xoffsets[i] + 1];
 		*dst++ = src[3 * xoffsets[i] + 2];
 	}
 }
-
-
-#if 0
-
-/* 32-bit version: it might be useful in the future */
-static void copy_pixels(
-        int wid,
-        int y,
-        int offset,
-        int *xoffsets,
-        GdkRGBImage *old_image,
-        GdkRGBImage *new_image)
-{
-	int i;
-
-	/* Get source and destination */
-	byte *src = &old_image->image[offset * old_image->width * 4];
-	byte *dst = &new_image->image[y * new_image->width * 4];
-
-	/* Copy to the image */
-	for (i = 0; i < wid; i++)
-	{
-		*dst++ = src[4 * xoffsets[i]];
-		*dst++ = src[4 * xoffsets[i] + 1];
-		*dst++ = src[4 * xoffsets[i] + 2];
-		*dst++ = src[4 * xoffsets[i] + 3];
-	}
-}
-
-#endif
 
 
 /*
@@ -1532,7 +1209,7 @@ static GdkRGBImage *resize_tiles(
  * CAVEAT: treatment of backslash is not compatible with the standard
  * C usage XXX XXX XXX XXX
  */
-static bool read_str(char *buf, u32b len, FILE *f)
+static bool_ read_str(char *buf, u32b len, FILE *f)
 {
 	int c;
 
@@ -1614,7 +1291,7 @@ static GdkRGBImage *load_xpm(cptr filename)
 	GdkRGBImage *img = NULL;
 	int width, height, colours, chars;
 	int i, j, k;
-	bool ret;
+	bool_ ret;
 	pal_type *pal = NULL;
 	pal_type *head[HASH_SIZE];
 	u32b buflen = 0;
@@ -2190,16 +1867,11 @@ static void graf_nuke()
 		/* Forget pointer */
 		td->tiles = NULL;
 
-# ifdef USE_TRANSPARENCY
-
 		/* Free previously allocated transparency buffer */
 		if (td->trans_buf) gdk_rgb_image_destroy(td->trans_buf);
 
 		/* Forget stale pointer */
 		td->trans_buf = NULL;
-
-# endif  /* USE_TRANSPARENCY */
-
 	}
 }
 
@@ -2212,20 +1884,18 @@ static void graf_nuke()
  *
  * XXX XXX XXX Windows using the same font should share resized tiles
  */
-static bool graf_init(
+static bool_ graf_init(
         cptr filename,
         int tile_wid,
         int tile_hgt)
 {
 	term_data *td;
 
-	bool result;
+	bool_ result;
 
 	GdkRGBImage *raw_tiles, *scaled_tiles;
 
-# ifdef USE_TRANSPARENCY
 	GdkRGBImage *buffer;
-# endif  /* USE_TRANSPARENCY */
 
 	int i;
 
@@ -2300,8 +1970,6 @@ static bool graf_init(
 			td->tiles = scaled_tiles;
 		}
 
-# ifdef USE_TRANSPARENCY
-
 		/* See if we have to (re)allocate a new buffer XXX */
 		if ((td->trans_buf == NULL) ||
 		                (td->trans_buf->width != td->tile_wid) ||
@@ -2337,8 +2005,6 @@ static bool graf_init(
 		                       raw_tiles,
 		                       0,
 		                       tile_hgt * 6);
-
-# endif  /* USE_TRANSPARENCY */
 
 	}
 
@@ -2453,11 +2119,7 @@ static void init_graphics(void)
 	smooth_rescaling = smooth_rescaling_request;
 
 	/* Reset visuals */
-#ifndef ANG281_RESET_VISUALS
-	reset_visuals(TRUE);
-#else
 	reset_visuals();
-#endif /* !ANG281_RESET_VISUALS */
 }
 
 #endif /* USE_GRAPHICS */
@@ -2502,15 +2164,11 @@ static void Term_nuke_gtk(term *t)
 	/* Forget pointer */
 	td->tiles = NULL;
 
-# ifdef USE_TRANSPARENCY
-
 	/* Free transparency buffer */
 	if (td->trans_buf) gdk_rgb_image_destroy(td->trans_buf);
 
 	/* Amnesia */
 	td->trans_buf = NULL;
-
-# endif  /* USE_TRANSPARENCY */
 
 #endif /* USE_GRAPHICS */
 }
@@ -2670,8 +2328,6 @@ static errr Term_curs_gtk(int x, int y)
 
 #ifdef USE_GRAPHICS
 
-# ifdef USE_TRANSPARENCY
-
 /*
  * XXX XXX Low level graphics helper
  * Draw a tile at (s_x, s_y) over one at (t_x, t_y) and store the
@@ -2710,8 +2366,6 @@ static void overlay_tiles_2(
 	}
 }
 
-
-# ifdef USE_EGO_GRAPHICS
 
 /*
  * XXX XXX Low level graphics helper
@@ -2759,9 +2413,6 @@ static void overlay_tiles_3(
 	}
 }
 
-# endif  /* USE_EGO_GRAPHICS */
-
-# endif  /* USE_TRANSPARENCY */
 
 
 /*
@@ -2769,24 +2420,11 @@ static void overlay_tiles_3(
  *
  * Draw "n" tiles/characters starting at (x,y)
  */
-# ifdef USE_TRANSPARENCY
-# ifdef USE_EGO_GRAPHICS
 static errr Term_pict_gtk(
         int x, int y, int n,
         const byte *ap, const char *cp,
         const byte *tap, const char *tcp,
         const byte *eap, const char *ecp)
-# else /* USE_EGO_GRAPHICS */
-static errr Term_pict_gtk(
-        int x, int y, int n,
-        const byte *ap, const char *cp,
-        const byte *tap, const char *tcp)
-# endif  /* USE_EGO_GRAPHICS */
-# else /* USE_TRANSPARENCY */
-static errr Term_pict_gtk(
-        int x, int y, int n,
-        const byte *ap, const char *cp)
-# endif  /* USE_TRANSPARENCY */
 {
 	term_data *td = (term_data*)(Term->data);
 
@@ -2827,56 +2465,36 @@ static errr Term_pict_gtk(
 		char c;
 		int s_x, s_y;
 
-# ifdef USE_TRANSPARENCY
-
 		byte ta;
 		char tc;
 		int t_x, t_y;
 
-# ifdef USE_EGO_GRAPHICS
-
 		byte ea;
 		char ec;
 		int e_x = 0, e_y = 0;
-		bool has_overlay;
-
-# endif  /* USE_EGO_GRAPHICS */
-
-# endif  /* USE_TRANSPARENCY */
+		bool_ has_overlay;
 
 
 		/* Grid attr/char */
 		a = *ap++;
 		c = *cp++;
 
-# ifdef USE_TRANSPARENCY
-
 		/* Terrain attr/char */
 		ta = *tap++;
 		tc = *tcp++;
-
-# ifdef USE_EGO_GRAPHICS
 
 		/* Overlay attr/char */
 		ea = *eap++;
 		ec = *ecp++;
 		has_overlay = (ea && ec);
 
-# endif  /* USE_EGO_GRAPHICS */
-
-# endif  /* USE_TRANSPARENCY */
-
 		/* Row and Col */
 		s_y = (((byte)a & 0x7F) % tile_rows) * td->tile_hgt;
 		s_x = (((byte)c & 0x7F) % tile_cols) * td->tile_wid;
 
-# ifdef USE_TRANSPARENCY
-
 		/* Terrain Row and Col */
 		t_y = (((byte)ta & 0x7F) % tile_rows) * td->tile_hgt;
 		t_x = (((byte)tc & 0x7F) % tile_cols) * td->tile_wid;
-
-# ifdef USE_EGO_GRAPHICS
 
 		/* Overlay Row and Col */
 		if (has_overlay)
@@ -2884,8 +2502,6 @@ static errr Term_pict_gtk(
 			e_y = (((byte)ea & 0x7F) % tile_rows) * td->tile_hgt;
 			e_x = (((byte)ec & 0x7F) % tile_cols) * td->tile_wid;
 		}
-
-# endif  /* USE_EGO_GRAPHICS */
 
 
 # ifdef USE_DOUBLE_TILES
@@ -2908,8 +2524,6 @@ static errr Term_pict_gtk(
 		if (!use_transparency ||
 		                ((s_x == t_x) && (s_y == t_y)))
 		{
-
-# ifdef USE_EGO_GRAPHICS
 
 			/* The simplest possible case - no overlay */
 			if (!has_overlay)
@@ -2939,17 +2553,6 @@ static errr Term_pict_gtk(
 				gdk_flush();
 			}
 
-# else /* USE_EGO_GRAPHICS */
-
-			/* Draw the tile */
-			gdk_draw_rgb_image_2(
-			        TERM_DATA_DRAWABLE(td), td->gc, td->tiles,
-			        s_x, s_y,
-			        d_x, d_y,
-			        td->tile_wid, td->tile_hgt);
-
-# endif  /* USE_EGO_GRAPHICS */
-
 		}
 
 		/*
@@ -2958,13 +2561,6 @@ static errr Term_pict_gtk(
 		 */
 		else
 		{
-
-# ifndef USE_EGO_GRAPHICS
-
-			/* Draw mon/PC/obj over terrain */
-			overlay_tiles_2(td, s_x, s_y, t_x, t_y);
-
-# else /* !USE_EGO_GRAPHICS */
 
 			/* No overlay */
 			if (!has_overlay)
@@ -2981,8 +2577,6 @@ static errr Term_pict_gtk(
 				                t_x, t_y);
 			}
 
-# endif  /* !USE_EGO_GRAPHICS */
-
 			/* Draw it */
 			gdk_draw_rgb_image_2(
 			        TERM_DATA_DRAWABLE(td), td->gc, td->trans_buf,
@@ -2993,17 +2587,6 @@ static errr Term_pict_gtk(
 			/* Hack -- Prevent potential display problem */
 			gdk_flush();
 		}
-
-# else /* USE_TRANSPARENCY */
-
-		/* Draw the tile */
-		gdk_draw_rgb_image_2(
-		        TERM_DATA_DRAWABLE(td), td->gc, td->tiles,
-		        s_x, s_y,
-		        d_x, d_y,
-		        td->tile_wid, td->tile_hgt);
-
-# endif  /* USE_TRANSPARENCY */
 
 		/*
 		 * Advance x-coordinate - wide font fillers are taken care of
@@ -3042,7 +2625,7 @@ static errr Term_pict_gtk(
  * Process an event, if there's none block when wait is set true,
  * return immediately otherwise.
  */
-static void CheckEvent(bool wait)
+static void CheckEvent(bool_ wait)
 {
 	/* Process an event */
 	(void)gtk_main_iteration_do(wait);
@@ -3348,13 +2931,7 @@ static void save_game_gtk(void)
 	msg_flag = FALSE;
 
 	/* Save the game */
-#ifdef ZANG_SAVE_GAME
-	/* Also for OAngband - the parameter tells if it's autosave */
-	do_cmd_save_game(FALSE);
-#else
-/* Everything else */
 	do_cmd_save_game();
-#endif /* ZANG_SAVE_GAME */
 }
 
 
@@ -3461,41 +3038,6 @@ static void destroy_sub_event_handler(
 }
 
 
-#ifndef SAVEFILE_SCREEN
-
-/*
- * Process File-New menu command
- */
-static void new_event_handler(
-        gpointer user_data,
-		guint user_action,
-        GtkWidget *was_clicked)
-{
-	if (game_in_progress)
-	{
-		plog("You can't start a new game while you're still playing!");
-		return;
-	}
-
-	/* The game is in progress */
-	game_in_progress = TRUE;
-
-	/* Flush input */
-	Term_flush();
-
-	/* Play game */
-	play_game(TRUE);
-
-	/* Houseclearing */
-	cleanup_angband();
-
-	/* Done */
-	quit(NULL);
-}
-
-#endif /* !SAVEFILE_SCREEN */
-
-
 /*
  * Load fond specified by an XLFD fontname and
  * set up related term_data members
@@ -3540,60 +3082,6 @@ static void load_font(term_data *td, cptr fontname)
 
 
 /*
- * React to OK button press in font selection dialogue
- */
-static void font_ok_callback(
-        GtkWidget *widget,
-        GtkWidget *font_selector)
-{
-	gchar *fontname;
-	term_data *td;
-
-	td = gtk_object_get_data(GTK_OBJECT(font_selector), "term_data");
-
-	g_assert(td != NULL);
-
-	/* Retrieve font name from player's selection */
-	fontname = gtk_font_selection_dialog_get_font_name(
-	                   GTK_FONT_SELECTION_DIALOG(font_selector));
-
-	/* Leave unless selection was valid */
-	if (fontname == NULL) return;
-
-	/* Load font and update font size info */
-	load_font(td, fontname);
-
-	/* Hack - Hide the window - finally found the trick... */
-	gtk_widget_hide_all(td->window);
-
-	/* Resizes the drawing area */
-	gtk_drawing_area_size(
-	        GTK_DRAWING_AREA(td->drawing_area),
-	        td->cols * td->font_wid,
-	        td->rows * td->font_hgt);
-
-	/* Update the geometry hints for the window */
-	term_data_set_geometry_hints(td);
-
-	/* Reallocate the backing store */
-	term_data_set_backing_store(td);
-
-	/* Hack - Show the window */
-	gtk_widget_show_all(td->window);
-
-#ifdef USE_GRAPHICS
-
-	/* We have to resize tiles when we are in graphics mode */
-	resize_request = TRUE;
-
-#endif /* USE_GRAPHICS */
-
-	/* Hack - force redraw */
-	Term_key_push(KTRL('R'));
-}
-
-
-/*
  * Process Options-Font-* menu command
  */
 static void change_font_event_handler(
@@ -3601,51 +3089,7 @@ static void change_font_event_handler(
 		guint user_action,
         GtkWidget *widget)
 {
-	GtkWidget *font_selector;
-
-	font_selector = gtk_font_selection_dialog_new("Select font");
-#if 0 // DGDGDGDG
-	gtk_object_set_data(
-	        GTK_OBJECT(font_selector),
-	        "term_data",
-	        user_data);
-
-	/* Filter to show only fixed-width fonts */
-	gtk_font_selection_dialog_set_filter(
-	        GTK_FONT_SELECTION_DIALOG(font_selector),
-	        GTK_FONT_FILTER_BASE,
-	        GTK_FONT_ALL,
-	        NULL,
-	        NULL,
-	        NULL,
-	        NULL,
-	        spacings,
-	        NULL);
-
-	gtk_signal_connect(
-	        GTK_OBJECT(GTK_FONT_SELECTION_DIALOG(font_selector)->ok_button),
-	        "clicked",
-	        font_ok_callback,
-	        (gpointer)font_selector);
-
-	/*
-	 * Ensure that the dialog box is destroyed when the user clicks
-	 * a button.
-	 */
-	gtk_signal_connect_object(
-	        GTK_OBJECT(GTK_FONT_SELECTION_DIALOG(font_selector)->ok_button),
-	        "clicked",
-	        GTK_SIGNAL_FUNC(gtk_widget_destroy),
-	        (gpointer)font_selector);
-
-	gtk_signal_connect_object(
-	        GTK_OBJECT(GTK_FONT_SELECTION_DIALOG(font_selector)->cancel_button),
-	        "clicked",
-	        GTK_SIGNAL_FUNC(gtk_widget_destroy),
-	        (gpointer)font_selector);
-
-	gtk_widget_show(GTK_WIDGET(font_selector));
-#endif
+	/* Not implemented */
 }
 
 
@@ -3772,10 +3216,8 @@ static void change_wide_tile_mode_event_handler(
 	/* Toggle "use_bigtile" */
 	use_bigtile = !use_bigtile;
 
-#ifdef TOME
 	/* T.o.M.E. requires this as well */
 	arg_bigtile = use_bigtile;
-#endif /* TOME */
 
 	/* Double the width of tiles (only for the main window) */
 	if (use_bigtile)
@@ -3808,8 +3250,6 @@ static void change_wide_tile_mode_event_handler(
 # endif  /* USE_DOUBLE_TILES */
 
 
-# ifdef USE_TRANSPARENCY
-
 /*
  * Toggles the boolean value of use_transparency
  */
@@ -3825,95 +3265,7 @@ static void change_trans_mode_event_handler(
 	Term_key_push(KTRL('R'));
 }
 
-# endif  /* USE_TRANSPARENCY */
-
 #endif /* USE_GRAPHICS */
-
-
-#ifndef SAVEFILE_SCREEN
-
-/*
- * Caution: Modal or not, callbacks are called by gtk_main(),
- * so this is the right place to start a game.
- */
-static void file_ok_callback(
-        GtkWidget *widget,
-        GtkWidget *file_selector)
-{
-	strcpy(savefile,
-	       gtk_file_selection_get_filename(GTK_FILE_SELECTION(file_selector)));
-
-	gtk_widget_destroy(file_selector);
-
-	/* game is in progress */
-	game_in_progress = TRUE;
-
-	/* Flush input */
-	Term_flush();
-
-	/* Play game */
-	play_game(FALSE);
-
-	/* Free memory allocated by game */
-	cleanup_angband();
-
-	/* Done */
-	quit(NULL);
-}
-
-
-/*
- * Process File-Open menu command
- */
-static void open_event_handler(
-        gpointer user_data,
-		guint user_action,
-        GtkWidget *was_clicked)
-{
-	GtkWidget *file_selector;
-	char buf[1024];
-
-
-	if (game_in_progress)
-	{
-		plog("You can't open a new game while you're still playing!");
-		return;
-	}
-
-	/* Prepare the savefile path */
-	path_build(buf, 1024, ANGBAND_DIR_SAVE, "*");
-
-	file_selector = gtk_file_selection_new("Select a savefile");
-	gtk_file_selection_set_filename(
-	        GTK_FILE_SELECTION(file_selector),
-	        buf);
-	gtk_signal_connect(
-	        GTK_OBJECT(GTK_FILE_SELECTION(file_selector)->ok_button),
-	        "clicked",
-	        file_ok_callback,
-	        (gpointer)file_selector);
-
-	/*
-	 * Ensure that the dialog box is destroyed when the user
-	 * clicks a button.
-	 */
-	gtk_signal_connect_object(
-	        GTK_OBJECT(GTK_FILE_SELECTION(file_selector)->ok_button),
-	        "clicked",
-	        GTK_SIGNAL_FUNC(gtk_widget_destroy),
-	        (gpointer)file_selector);
-
-	gtk_signal_connect_object(
-	        GTK_OBJECT(GTK_FILE_SELECTION(file_selector)->cancel_button),
-	        "clicked",
-	        GTK_SIGNAL_FUNC(gtk_widget_destroy),
-	        (gpointer)file_selector);
-
-	gtk_window_set_modal(GTK_WINDOW(file_selector), TRUE);
-	gtk_widget_show(GTK_WIDGET(file_selector));
-}
-
-#endif /* !SAVEFILE_SCREEN */
 
 
 /*
@@ -3941,7 +3293,6 @@ static gboolean keypress_event_handler(
         GdkEventKey *event,
         gpointer user_data)
 {
-#if 1
 	int i, mc, ms, mo, mx;
 
 	char msg[128];
@@ -4021,31 +3372,6 @@ static gboolean keypress_event_handler(
 			return (TRUE);
 		}
 
-		/* Hack - the cursor keys */
-	case GDK_Up:
-		{
-			Term_keypress('8');
-			return (TRUE);
-		}
-
-	case GDK_Down:
-		{
-			Term_keypress('2');
-			return (TRUE);
-		}
-
-	case GDK_Left:
-		{
-			Term_keypress('4');
-			return (TRUE);
-		}
-
-	case GDK_Right:
-		{
-			Term_keypress('6');
-			return (TRUE);
-		}
-
 	case GDK_Shift_L:
 	case GDK_Shift_R:
 	case GDK_Control_L:
@@ -4083,123 +3409,6 @@ static gboolean keypress_event_handler(
 	}
 
 	return (TRUE);
-
-#else
-	int i, mc, ms, mo, mx;
-
-	char msg[128];
-
-
-	/* Extract four "modifier flags" */
-	mc = (event->state & GDK_CONTROL_MASK) ? TRUE : FALSE;
-	ms = (event->state & GDK_SHIFT_MASK) ? TRUE : FALSE;
-	mo = (event->state & GDK_MOD1_MASK) ? TRUE : FALSE;
-	mx = (event->state & GDK_MOD3_MASK) ? TRUE : FALSE;
-	printf("0=%d 9=%d;; keyval=%d; mc=%d, ms=%d  ::=:: ", GDK_KP_0, GDK_KP_9, event->keyval, mc, ms);
-	/* Enqueue the normal key(s) */
-	for (i = 0; i < event->length; i++) printf("%d;", event->string[i]);
-	printf("\n");
-
-	/*
-	* Hack XXX
-	* Parse shifted numeric (keypad) keys specially.
-	*/
-	if ((event->state & GDK_SHIFT_MASK)
-	                && (event->keyval >= GDK_KP_Left) && (event->keyval <= GDK_KP_Delete))
-	{
-		/* Build the macro trigger string */
-		strnfmt(msg, 128, "%cS_%X%c", 31, event->keyval, 13);
-		printf("%cS_%X%c", 31, event->keyval, 13);
-
-		/* Enqueue the "macro trigger" string */
-		for (i = 0; msg[i]; i++) Term_keypress(msg[i]);
-
-		/* Hack -- auto-define macros as needed */
-		if (event->length && (macro_find_exact(msg) < 0))
-		{
-			/* Create a macro */
-			macro_add(msg, event->string);
-		}
-
-		return (TRUE);
-	}
-
-	/* Normal keys with no modifiers */
-	if (event->length && !mo && !mx)
-	{
-		/* Enqueue the normal key(s) */
-		for (i = 0; i < event->length; i++) Term_keypress(event->string[i]);
-
-		/* All done */
-		return (TRUE);
-	}
-
-	/* Handle a few standard keys (bypass modifiers) XXX XXX XXX */
-	switch ((uint) event->keyval)
-	{
-	case GDK_Escape:
-		{
-			Term_keypress(ESCAPE);
-			return (TRUE);
-		}
-
-	case GDK_Return:
-		{
-			Term_keypress('\r');
-			return (TRUE);
-		}
-
-	case GDK_Tab:
-		{
-			Term_keypress('\t');
-			return (TRUE);
-		}
-
-	case GDK_Delete:
-	case GDK_BackSpace:
-		{
-			Term_keypress('\010');
-			return (TRUE);
-		}
-
-	case GDK_Shift_L:
-	case GDK_Shift_R:
-	case GDK_Control_L:
-	case GDK_Control_R:
-	case GDK_Caps_Lock:
-	case GDK_Shift_Lock:
-	case GDK_Meta_L:
-	case GDK_Meta_R:
-	case GDK_Alt_L:
-	case GDK_Alt_R:
-	case GDK_Super_L:
-	case GDK_Super_R:
-	case GDK_Hyper_L:
-	case GDK_Hyper_R:
-		{
-			/* Hack - do nothing to control characters */
-			return (TRUE);
-		}
-	}
-
-	/* Build the macro trigger string */
-	strnfmt(msg, 128, "%c%s%s%s%s_%X%c", 31,
-	        mc ? "N" : "", ms ? "S" : "",
-	        mo ? "O" : "", mx ? "M" : "",
-	        event->keyval, 13);
-
-	/* Enqueue the "macro trigger" string */
-	for (i = 0; msg[i]; i++) Term_keypress(msg[i]);
-
-	/* Hack -- auto-define macros as needed */
-	if (event->length && (macro_find_exact(msg) < 0))
-	{
-		/* Create a macro */
-		macro_add(msg, event->string);
-	}
-
-	return (TRUE);
-#endif
 }
 
 
@@ -4492,14 +3701,6 @@ static GtkItemFactoryEntry main_menu_items[] =
 	{ "/File", NULL,
 	  NULL, 0, "<Branch>", NULL
 	},
-#ifndef SAVEFILE_SCREEN
-	{ "/File/New", "<mod1>N",
-	  new_event_handler, 0, NULL, NULL },
-	{ "/File/Open", "<mod1>O",
-	  open_event_handler, 0, NULL, NULL },
-	{ "/File/sep1", NULL,
-	  NULL, 0, "<Separator>", NULL },
-#endif /* !SAVEFILE_SCREEN */
 	{ "/File/Save", "<mod1>S",
 	  save_event_handler, 0, NULL, NULL },
 	{ "/File/Quit", "<mod1>Q",
@@ -4578,10 +3779,8 @@ static GtkItemFactoryEntry main_menu_items[] =
 	  NULL, 0, "<Separator>", NULL },
 	{ "/Options/Graphics/Smoothing", NULL,
 	  change_smooth_mode_event_handler, 0, "<CheckItem>", NULL },
-# ifdef USE_TRANSPARENCY
 	{ "/Options/Graphics/Transparency", NULL,
 	  change_trans_mode_event_handler, 0, "<CheckItem>", NULL },
-# endif  /* USE_TRANSPARENCY */
 
 #endif /* USE_GRAPHICS */
 
@@ -4728,7 +3927,7 @@ static GtkWidget *get_widget_from_path(cptr path)
 /*
  * Enable/disable a menu item
  */
-void enable_menu_item(cptr path, bool enabled)
+void enable_menu_item(cptr path, bool_ enabled)
 {
 	GtkWidget *widget;
 
@@ -4750,7 +3949,7 @@ void enable_menu_item(cptr path, bool enabled)
 /*
  * Check/uncheck a menu item. The item should be of the GtkCheckMenuItem type
  */
-void check_menu_item(cptr path, bool checked)
+void check_menu_item(cptr path, bool_ checked)
 {
 	GtkWidget *widget;
 
@@ -4781,17 +3980,7 @@ static void file_menu_update_handler(
         GtkWidget *widget,
         gpointer user_data)
 {
-#ifndef SAVEFILE_SCREEN
-	bool game_start_ok;
-#endif /* !SAVEFILE_SCREEN */
-	bool save_ok, quit_ok;
-
-#ifndef SAVEFILE_SCREEN
-
-	/* Can we start a game now? */
-	game_start_ok = !game_in_progress;
-
-#endif /* !SAVEFILE_SCREEN */
+	bool_ save_ok, quit_ok;
 
 	/* Cave we save/quit now? */
 	if (!character_generated || !game_in_progress)
@@ -4806,10 +3995,6 @@ static void file_menu_update_handler(
 	}
 
 	/* Enable / disable menu items according to those conditions */
-#ifndef SAVEFILE_SCREEN
-	enable_menu_item("<Angband>/File/New", game_start_ok);
-	enable_menu_item("<Angband>/File/Open", game_start_ok);
-#endif /* !SAVEFILE_SCREEN */
 	enable_menu_item("<Angband>/File/Save", save_ok);
 	enable_menu_item("<Angband>/File/Quit", quit_ok);
 }
@@ -4912,13 +4097,9 @@ static void graf_menu_update_handler(
 	        "<Angband>/Options/Graphics/Smoothing",
 	        smooth_rescaling);
 
-# ifdef USE_TRANSPARENCY
-
 	check_menu_item(
 	        "<Angband>/Options/Graphics/Transparency",
 	        use_transparency);
-
-# endif  /* USE_TRANSPARENCY */
 }
 
 #endif /* USE_GRAPHICS */
@@ -5058,7 +4239,7 @@ static void init_gtk_window(term_data *td, int i)
 	GtkWidget *menu_bar = NULL, *box;
 	cptr font;
 
-	bool main_window = (i == 0) ? TRUE : FALSE;
+	bool_ main_window = (i == 0) ? TRUE : FALSE;
 
 
 	/* Create window */
@@ -5206,26 +4387,6 @@ static void hook_quit(cptr str)
 }
 
 
-#ifdef ANGBAND300
-
-/*
- * Help message for this port
- */
-const char help_gtk[] =
-        "GTK for X11, subopts -n<windows>\n"
-        "           -b(acking store off)\n"
-#ifdef USE_GRAPHICS
-        "           -g(raphics) -o(ld graphics) -s(moothscaling off) \n"
-        "           -t(ransparency on)\n"
-# ifdef USE_DOUBLE_TILES
-        "           -w(ide tiles)\n"
-# endif  /* USE_DOUBLE_TILES */
-#endif /* USE_GRAPHICS */
-        "           and standard GTK options";
-
-#endif /* ANGBAND300 */
-
-
 /*
  * Initialization function
  */
@@ -5284,10 +4445,7 @@ errr init_gtk2(int argc, char **argv)
 		if (streq(argv[i], "-w"))
 		{
 			use_bigtile = TRUE;
-# ifdef TOME
-			/* T.o.M.E. uses older version of the patch */
 			arg_bigtile = TRUE;
-# endif  /* TOME */
 			continue;
 		}
 
@@ -5359,51 +4517,11 @@ errr init_gtk2(int argc, char **argv)
 	/* Activate the "Angband" window screen */
 	Term_activate(&data[0].t);
 
-#ifndef SAVEFILE_SCREEN
-
-	/* Set the system suffix */
-	ANGBAND_SYS = "gtk";
-
-	/* Catch nasty signals */
-	signals_init();
-
-	/* Initialize */
-	init_angband();
-
-#ifndef OLD_SAVEFILE_CODE
-
-	/* Hack - because this port has New/Open menus XXX */
-	savefile[0] = '\0';
-
-#endif /* !OLD_SAVEFILE_CODE */
-
-	/* Prompt the user */
-	prt("[Choose 'New' or 'Open' from the 'File' menu]", 23, 17);
-	Term_fresh();
-
-	/* Activate more hook */
-	plog_aux = hook_plog;
-
-
-	/* Processing loop */
-	gtk_main();
-
-
-	/* Free allocated memory */
-	cleanup_angband();
-
-	/* Stop now */
-	quit(NULL);
-
-#else /* !SAVEFILE_SCREEN */
-
 	/* Activate more hook */
 	plog_aux = hook_plog;
 
 	/* It's too early to set this, but cannot do so elsewhere XXX XXX */
 	game_in_progress = TRUE;
-
-#endif /* !SAVEFILE_SCREEN */
 
 	/* Success */
 	return (0);

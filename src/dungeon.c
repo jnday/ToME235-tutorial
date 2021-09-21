@@ -11,25 +11,16 @@
  */
 
 #include "angband.h"
-#include "lua/lua.h"
-#include "tolua.h"
-extern lua_State* L;
+
+#include <assert.h>
+
+#include "quark.h"
+#include "spell_type.h"
 
 #define TY_CURSE_CHANCE 100
 #define DG_CURSE_CHANCE 50
 #define AUTO_CURSE_CHANCE 15
 #define CHAINSWORD_NOISE 100
-
-/*
- * I created this when a bug misplaced my character and the game wasn't able
- * to load it again.. very frustrating.
- * So this hack will generate a new level without calling dungeon(), and
- * then the normal behavior will apply.
- */
-/* #define SAVE_HACK */
-#ifdef SAVE_HACK
-bool save_hack = TRUE;
-#endif
 
 
 /*
@@ -154,8 +145,8 @@ byte value_check_aux2(object_type *o_ptr)
 	/* Good weapon bonuses */
 	if (o_ptr->to_h + o_ptr->to_d > 0) return (SENSE_GOOD_LIGHT);
 
-	/* No feeling */
-	return (SENSE_NONE);
+	/* Default to "average" */
+	return (SENSE_AVERAGE);
 }
 
 
@@ -226,7 +217,7 @@ byte value_check_aux2_magic(object_type *o_ptr)
 /*
  * Can a player be resurrected?
  */
-static bool granted_resurrection(void)
+static bool_ granted_resurrection(void)
 {
 	PRAY_GOD(GOD_ERU)
 	{
@@ -239,7 +230,7 @@ static bool granted_resurrection(void)
 	return (FALSE);
 }
 
-byte select_sense(object_type *o_ptr, bool ok_combat, bool ok_magic)
+static byte select_sense(object_type *o_ptr)
 {
 	/* Valid "tval" codes */
 	switch (o_ptr->tval)
@@ -266,7 +257,7 @@ byte select_sense(object_type *o_ptr, bool ok_combat, bool ok_magic)
 	case TV_BOOMERANG:
 	case TV_TRAPKIT:
 		{
-			if (ok_combat) return 1;
+			return 1;
 			break;
 		}
 
@@ -278,14 +269,14 @@ byte select_sense(object_type *o_ptr, bool ok_combat, bool ok_magic)
 	case TV_ROD:
 	case TV_ROD_MAIN:
 		{
-			if (ok_magic) return 2;
+			return 2;
 			break;
 		}
 
 		/* Dual use? */
 	case TV_DAEMON_BOOK:
 		{
-			if (ok_combat || ok_magic) return 1;
+			return 1;
 			break;
 		}
 	}
@@ -305,12 +296,11 @@ byte select_sense(object_type *o_ptr, bool ok_combat, bool ok_magic)
  * they learn one form of ID or another, and because most magic items are
  * easy_know.
  */
-static void sense_inventory(void)
+void sense_inventory(void)
 {
 	int i, combat_lev, magic_lev;
 
-	bool heavy_combat, heavy_magic;
-	bool ok_combat, ok_magic;
+	bool_ heavy_combat, heavy_magic;
 
 	byte feel;
 
@@ -323,14 +313,6 @@ static void sense_inventory(void)
 
 	/* No sensing when confused */
 	if (p_ptr->confused) return;
-
-	/* Can we pseudo id */
-#if 0
-
-	if (0 == rand_int(133 - get_skill_scale(SKILL_COMBAT, 130))) ok_combat = TRUE;
-	if (0 == rand_int(133 - get_skill_scale(SKILL_MAGIC, 130))) ok_magic = TRUE;
-
-#endif
 
 	/*
 	 * In Angband, the chance of pseudo-id uses two different formulae:
@@ -360,22 +342,8 @@ static void sense_inventory(void)
 	/* The combat skill affects weapon/armour pseudo-ID */
 	combat_lev = get_skill(SKILL_COMBAT);
 
-	/* Use the fast formula */
-	ok_combat = (0 == rand_int(9000L / (combat_lev * combat_lev + 40)));
-
 	/* The magic skill affects magic item pseudo-ID */
 	magic_lev = get_skill(SKILL_MAGIC);
-
-	/*
-	 * Use the slow formula, because spellcasters have id spells
-	 *
-	 * Lowered the base value because V rangers are known to have
-	 * pretty useless pseudo-ID. This should make it ten times more often.
-	 */
-	ok_magic = (0 == rand_int(12000L / (magic_lev + 5)));
-
-	/* Both ID rolls failed */
-	if (!ok_combat && !ok_magic) return;
 
 	/* Higher skill levels give the player better sense of items */
 	heavy_combat = (combat_lev > 10) ? TRUE : FALSE;
@@ -394,20 +362,17 @@ static void sense_inventory(void)
 		/* Skip empty slots */
 		if (!o_ptr->k_idx) continue;
 
-		/* Valid "tval" codes */
-		okay = select_sense(o_ptr, ok_combat, ok_magic);
-
-		/* Skip non-sense machines */
-		if (!okay) continue;
-
 		/* We know about it already, do not tell us again */
 		if (o_ptr->ident & (IDENT_SENSE)) continue;
 
 		/* It is fully known, no information needed */
 		if (object_known_p(o_ptr)) continue;
 
-		/* Occasional failure on inventory items */
-		if ((i < INVEN_WIELD) && (0 != rand_int(5))) continue;
+		/* Valid "tval" codes */
+		okay = select_sense(o_ptr);
+
+		/* Skip non-sense machines */
+		if (!okay) continue;
 
 		/* Check for a feeling */
 		if (okay == 1)
@@ -421,9 +386,6 @@ static void sense_inventory(void)
 
 		/* Skip non-feelings */
 		if (feel == SENSE_NONE) continue;
-
-		/* Stop everything */
-		if (disturb_minor) disturb(0, 0);
 
 		/* Get an object description */
 		object_desc(o_name, o_ptr, FALSE, 0);
@@ -505,13 +467,7 @@ static void pattern_teleport(void)
 	/* Accept request */
 	msg_format("You teleport to dungeon level %d.", command_arg);
 
-	if (autosave_l)
-	{
-		is_autosave = TRUE;
-		msg_print("Autosaving the game...");
-		do_cmd_save_game();
-		is_autosave = FALSE;
-	}
+	autosave_checkpoint();
 
 	/* Change level */
 	dun_level = command_arg;
@@ -524,7 +480,7 @@ static void pattern_teleport(void)
 /*
  * Returns TRUE if we are on the Straight Road...
  */
-static bool pattern_effect(void)
+static bool_ pattern_effect(void)
 {
 	if ((cave[p_ptr->py][p_ptr->px].feat < FEAT_PATTERN_START) ||
 	                (cave[p_ptr->py][p_ptr->px].feat > FEAT_PATTERN_XTRA2)) return (FALSE);
@@ -825,86 +781,11 @@ static void regen_monsters(void)
 
 
 /*
- * Forcibly pseudo-identify an object in the inventory
- * (or on the floor)
- */
-bool psychometry(void)
-{
-	int item;
-
-	object_type *o_ptr;
-
-	char o_name[80];
-
-	byte feel;
-
-	cptr q, s;
-
-
-	/* Get an item */
-	q = "Meditate on which item? ";
-	s = "You have nothing appropriate.";
-	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN | USE_FLOOR))) return (FALSE);
-
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
-
-	/* It is fully known, no information needed */
-	if ((object_known_p(o_ptr)) || (o_ptr->ident & IDENT_SENSE))
-	{
-		msg_print("You cannot find out anything more about that.");
-		return (TRUE);
-	}
-
-	/* Check for a feeling */
-	feel = value_check_aux1_magic(o_ptr);
-	if (feel == SENSE_NONE) feel = value_check_aux1(o_ptr);
-
-	/* Get an object description */
-	object_desc(o_name, o_ptr, FALSE, 0);
-
-	/* Skip non-feelings */
-	if (!feel)
-	{
-		msg_format("You do not perceive anything unusual about the %s.", o_name);
-		return (TRUE);
-	}
-
-	msg_format("You feel that the %s %s %s...",
-	           o_name, ((o_ptr->number == 1) ? "is" : "are"), sense_desc[feel]);
-
-	/* We have "felt" it */
-	o_ptr->ident |= (IDENT_SENSE);
-
-	/* Set sense property */
-	o_ptr->sense = feel;
-
-	/* Combine / Reorder the pack (later) */
-	p_ptr->notice |= (PN_COMBINE | PN_REORDER);
-
-	/* Window stuff */
-	p_ptr->window |= (PW_INVEN | PW_EQUIP | PW_PLAYER);
-
-	/* Something happened */
-	return (TRUE);
-}
-
-
-/*
  * Does an object decay?
  *
  * Should belong to object1.c, renamed to object_decays() -- pelpel
  */
-bool decays(object_type *o_ptr)
+bool_ decays(object_type *o_ptr)
 {
 	u32b f1, f2, f3, f4, f5, esp;
 
@@ -920,30 +801,8 @@ bool decays(object_type *o_ptr)
 
 static int process_lasting_spell(s16b music)
 {
-	int oldtop, use_mana;
-
-	if (music > 0) return FALSE;
-
-	oldtop = lua_gettop(L);
-
-	music = -music;
-
-	/* Push the function */
-	lua_getglobal(L, "exec_lasting_spell");
-
-	/* Push the spell */
-	tolua_pushnumber(L, music);
-
-	/* Call the function */
-	if (lua_call(L, 1, 1))
-	{
-		cmsg_format(TERM_VIOLET, "ERROR in lua_call while calling lasting spell");
-		return 0;
-	}
-
-	use_mana = tolua_getnumber(L, -(lua_gettop(L) - oldtop), 0);
-	lua_settop(L, oldtop);
-	return use_mana;
+	spell_type *spell = spell_at(-music);
+	return spell_type_produce_effect_lasting(spell);
 }
 
 static void gere_class_special()
@@ -1069,8 +928,8 @@ static void check_music()
 	if (p_ptr->csp < use_mana)
 	{
 		msg_print("You stop your spell.");
-		p_ptr->music_extra = MUSIC_NONE;
-		p_ptr->music_extra2 = MUSIC_NONE;
+		p_ptr->music_extra = 0;
+		p_ptr->music_extra2 = 0;
 	}
 	else
 	{
@@ -1131,133 +990,275 @@ void apply_effect(int y, int x)
 }
 
 
-#if 0
-/*
- * Activate corruptions' effects on player
- *
- * All the rolls against arbitrarily chosen numbers are normalised
- * (i.e. zero). They might have some cabalistic(?) significance,
- * but I seriously doubt if processors take care of the Judeo-Christian
- * tradition :) -- pelpel
- */
-static void process_corruption_effects(void)
-{}
 
-#endif
+/* XXX XXX XXX */
+bool_ is_recall = FALSE;
 
-
-
-#ifdef pelpel
 
 /*
- * Handle staying spell effects once every 10 game turns
+ * Hook for corruptions
  */
-static void process_effects(void)
+static void process_world_corruptions()
 {
-	int i, j;
-
-	/* Every 10 game turns */
-	if (turn % 10) return;
-
-	/* Not in the small-scale wilderness map */
-	if (p_ptr->wild_mode) return;
-
-
-	/* Handle spell effects */
-	for (j = 0; j < cur_hgt - 1; j++)
+	if (player_has_corruption(CORRUPT_RANDOM_TELEPORT))
 	{
-		for (i = 0; i < cur_wid - 1; i++)
+		if (rand_int(300) == 1)
 		{
-			int e = cave[j][i].effect;
-
-			if (e)
+			if (magik(70))
 			{
-				effect_type *e_ptr = &effects[e];
-
-				if (e_ptr->time)
+				if (get_check("Teleport?"))
 				{
-					/* Apply damage */
-					project(0, 0, j, i, e_ptr->dam, e_ptr->type,
-					        PROJECT_KILL | PROJECT_ITEM | PROJECT_HIDE);
+					teleport_player(50);
 				}
 				else
 				{
-					cave[j][i].effect = 0;
-				}
-
-				/* Hack -- notice death */
-				if (!alive || death) return;
-
-				if (((e_ptr->flags & EFF_WAVE) && !(e_ptr->flags & EFF_LAST)) || ((e_ptr->flags & EFF_STORM) && !(e_ptr->flags & EFF_LAST)))
-				{
-					if (distance(e_ptr->cy, e_ptr->cx, j, i) < e_ptr->rad - 1)
-						cave[j][i].effect = 0;
+					disturb(0, 0);
+					msg_print("Your corruption takes over you, you teleport!");
+					teleport_player(50);
 				}
 			}
 		}
 	}
 
-
-	/* Reduce & handle effects */
-	for (i = 0; i < MAX_EFFECTS; i++)
+	if (player_has_corruption(CORRUPT_ANTI_TELEPORT))
 	{
-		/* Skip empty slots */
-		if (effects[i].time == 0) continue;
-
-		/* Reduce duration */
-		effects[i].time--;
-
-		/* Creates a "wave" effect*/
-		if (effects[i].flags & EFF_WAVE)
+		if (p_ptr->corrupt_anti_teleport_stopped)
 		{
-			effect_type *e_ptr = &effects[i];
-			int x, y;
-
-			e_ptr->rad++;
-			for (y = e_ptr->cy - e_ptr->rad; y <= e_ptr->cy + e_ptr->rad; y++)
-			{
-				for (x = e_ptr->cx - e_ptr->rad; x <= e_ptr->cx + e_ptr->rad; x++)
-				{
-					if (!in_bounds(y, x)) continue;
-
-					if (los(e_ptr->cy, e_ptr->cx, y, x) &&
-					                (distance(e_ptr->cy, e_ptr->cx, y, x) == e_ptr->rad))
-						cave[y][x].effect = i;
-				}
+			int amt = p_ptr->msp + p_ptr->csp;
+			amt = amt / 100;
+			if (amt < 1) {
+				amt = 1;
 			}
-		}
-		/* Creates a "storm" effect*/
-		else if (effects[i].flags & EFF_STORM)
-		{
-			effect_type *e_ptr = &effects[i];
-			int x, y;
-
-			e_ptr->cy = p_ptr->py;
-			e_ptr->cx = p_ptr->px;
-			for (y = e_ptr->cy - e_ptr->rad; y <= e_ptr->cy + e_ptr->rad; y++)
+			increase_mana(-amt);
+			if (p_ptr->csp == 0)
 			{
-				for (x = e_ptr->cx - e_ptr->rad; x <= e_ptr->cx + e_ptr->rad; x++)
-				{
-					if (!in_bounds(y, x)) continue;
-
-					if (los(e_ptr->cy, e_ptr->cx, y, x) &&
-					                (distance(e_ptr->cy, e_ptr->cx, y, x) == e_ptr->rad))
-						cave[y][x].effect = i;
-				}
+				p_ptr->corrupt_anti_teleport_stopped = FALSE;
+				msg_print("You stop controlling your corruption.");
+				p_ptr->update = p_ptr->update | PU_BONUS;
 			}
 		}
 	}
-
-	/* Apply sustained effect in the player grid, if any */
-	apply_effect(p_ptr->py, p_ptr->px);
 }
 
-#endif /* pelpel */
 
+/*
+ * Shim for accessing Lua variable.
+ */
+static bool_ grace_delay_trigger()
+{
+	p_ptr->grace_delay++;
 
-/* XXX XXX XXX */
-bool is_recall = FALSE;
+	if (p_ptr->grace_delay >= 15)
+	{
+		/* reset */
+		p_ptr->grace_delay = 0;
+		/* triggered */
+		return TRUE;
+	}
+	else
+	{
+		/* not triggered */
+		return FALSE;
+	}
+}
 
+/*
+ * Hook for gods
+ */
+static void process_world_gods()
+{
+	const char *race_name = rp_ptr->title + rp_name;
+	const char *subrace_name = rmp_ptr->title + rmp_name;
+
+	GOD(GOD_VARDA)
+	{
+		if (grace_delay_trigger())
+		{
+			/* Piety increases if in light. */
+			if (cave[p_ptr->py][p_ptr->px].info & CAVE_GLOW)
+			{
+				inc_piety(GOD_ALL, 2);
+			}
+
+			if (streq(race_name, "Orc") ||
+			    streq(race_name, "Troll") ||
+			    streq(race_name, "Dragon") ||
+			    streq(race_name, "Demon"))
+			{
+				/* Varda hates evil races */
+				inc_piety(GOD_ALL, -2);
+			} else {
+				/* ... and everyone slightly less */
+				inc_piety(GOD_ALL, -1);
+			}
+
+			/* Prayer uses piety */
+			if (p_ptr->praying)
+			{
+				inc_piety(GOD_ALL, -1);
+			}
+		}
+	}
+
+	GOD(GOD_ULMO)
+	{
+		if (grace_delay_trigger())
+		{
+			int i;
+			/* Ulmo likes the Edain (except Easterlings) */
+			if (streq(race_name, "Human") ||
+			    streq(race_name, "Dunadan") ||
+			    streq(race_name, "Druadan") ||
+			    streq(race_name, "RohanKnight"))
+			{
+				inc_piety(GOD_ALL, 2);
+			}
+			else if (streq(race_name, "Easterling") ||
+				 streq(race_name, "Demon") ||
+				 streq(race_name, "Orc"))
+			{
+				/* hated races */
+				inc_piety(GOD_ALL, -2);
+			}
+			else
+			{
+				inc_piety(GOD_ALL, 1);
+			}
+
+			if (p_ptr->praying)
+			{
+				inc_piety(GOD_ALL, -1);
+			}
+
+			/* Gain 1 point for each trident in inventory */
+			for (i = 0; i < INVEN_TOTAL; i++)
+			{
+				if ((p_ptr->inventory[i].tval == TV_POLEARM) &&
+				    (p_ptr->inventory[i].sval == SV_TRIDENT))
+				{
+					inc_piety(GOD_ALL, 1);
+				}
+			}
+		}
+	}
+
+	GOD(GOD_AULE)
+	{
+		if (grace_delay_trigger())
+		{
+			int i;
+
+			/* Aule likes Dwarves and Dark Elves (Eol's
+			 * influence here) */
+			if  (!(streq(race_name, "Dwarf") ||
+			       streq(race_name, "Petty-dwarf") ||
+			       streq(race_name, "Gnome") ||
+			       streq(race_name, "Dark-Elf")))
+			{
+				inc_piety(GOD_ALL, -1);
+			}
+
+			/* Search inventory for axe or hammer - Gain 1
+			 * point of grace for each hammer or axe */
+			for (i = 0; i < INVEN_TOTAL; i++)
+			{
+				int tval = p_ptr->inventory[i].tval;
+				int sval = p_ptr->inventory[i].sval;
+
+				switch (tval)
+				{
+				case TV_AXE:
+					inc_piety(GOD_ALL, 1);
+					break;
+
+				case TV_HAFTED:
+					if ((sval == SV_WAR_HAMMER) ||
+					    (sval == SV_LUCERN_HAMMER) ||
+					    (sval == SV_GREAT_HAMMER))
+					{
+						inc_piety(GOD_ALL, 1);
+					}
+					break;
+				}
+			}
+
+			/* Praying may grant you a free stone skin
+			 * once in a while */
+			if (p_ptr->praying)
+			{
+				int chance;
+				s32b grace;
+
+				inc_piety(GOD_ALL, -2);
+				grace = p_ptr->grace; /* shorthand */
+
+				chance = 1;
+				if (grace >= 50000)
+				{
+					chance = 50000;
+				}
+				else
+				{
+					chance = 50000 - grace;
+				}
+
+				if (randint(100000) <= 100000 / chance)
+				{
+					s16b type = 0;
+
+					if (grace >= 10000)
+					{
+						type = SHIELD_COUNTER;
+					}
+
+					set_shield(
+						randint(10) + 10 + (grace / 100),
+						10 + (grace / 100),
+						type,
+						2 + (grace / 200),
+						3 + (grace / 400));
+
+					msg_print("Aule casts Stone Skin on you.");
+				}
+			}
+		}
+	}
+
+	GOD(GOD_MANDOS)
+	{
+		if (grace_delay_trigger())
+		{
+			/* He loves astral beings  */
+			if (streq(subrace_name, "LostSoul"))
+			{
+				inc_piety(GOD_ALL, 1);
+			}
+
+			/* He likes High Elves only, though, as races */
+			if (!streq(race_name, "High-Elf"))
+			{
+				inc_piety(GOD_ALL, -1);
+			}
+
+			/* Really hates vampires and demons */
+			if (streq(subrace_name, "Vampire") ||
+			    streq(race_name, "Demon"))
+			{
+				inc_piety(GOD_ALL, -10);
+			}
+			else
+			{
+				inc_piety(GOD_ALL, 2);
+			}
+			/* he really doesn't like to be disturbed */
+			if (p_ptr->praying)
+			{
+				inc_piety(GOD_ALL, -5);
+			}
+		}
+	}
+
+}
 
 /*
  * Handle certain things once every 10 game turns
@@ -1272,7 +1273,7 @@ static void process_world(void)
 	int x, y, i, j;
 
 	int regen_amount;
-	bool cave_no_regen = FALSE;
+	bool_ cave_no_regen = FALSE;
 	int upkeep_factor = 0;
 
 	dungeon_info_type *d_ptr = &d_info[dungeon_type];
@@ -1280,7 +1281,6 @@ static void process_world(void)
 	cave_type *c_ptr;
 
 	object_type *o_ptr;
-	object_kind *k_ptr;
 	u32b f1 = 0 , f2 = 0 , f3 = 0, f4 = 0, f5 = 0, esp = 0;
 
 
@@ -1303,8 +1303,11 @@ static void process_world(void)
 	 */
 	if (dun_level || (!p_ptr->wild_mode))
 	{
-		/* Let the script live! */
-		process_hooks(HOOK_PROCESS_WORLD, "()");
+		/* Handle corruptions */
+		process_world_corruptions();
+
+		/* Handle gods */
+		process_world_gods();
 
 		/* Handle the player song */
 		check_music();
@@ -1319,7 +1322,8 @@ static void process_world(void)
 		if (!t_ptr->countdown)
 		{
 			t_ptr->countdown = t_ptr->delay;
-			call_lua(t_ptr->callback, "()", "");
+			assert(t_ptr->callback != NULL);
+			t_ptr->callback();
 		}
 	}
 
@@ -1347,50 +1351,9 @@ static void process_world(void)
 
 		if ((randint(1000) < r_ptr->level - ((p_ptr->lev * 2) + get_skill(SKILL_SYMBIOTIC))))
 		{
-			msg_format("%s thinks you are not enough in symbiosis.",
+			msg_format("%s breaks free from hypnosis!",
 			           symbiote_name(TRUE));
 			carried_make_attack_normal(o_ptr->pval);
-		}
-	}
-
-	/*** Check the Time and Load ***/
-
-	/*
-	 * Every 1000 game turns -- which means this section is invoked every
-	 * 100 player turns under the normal speed, and slightly more than
-	 * one per move in the reduced map.
-	 */
-	if ((turn % 1000) == 0)
-	{
-		/* Check time and load */
-		if ((0 != check_time()) || (0 != check_load()))
-		{
-			/* Warning */
-			if (closing_flag <= 2)
-			{
-				/* Disturb */
-				disturb(0, 0);
-
-				/* Count warnings */
-				closing_flag++;
-
-				/* Message */
-				msg_print("The gates to Middle Earth are closing...");
-				msg_print("Please finish up and/or save your game.");
-			}
-
-			/* Slam the gate */
-			else
-			{
-				/* Message */
-				msg_print("The gates to Middle Earth are now closed.");
-
-				/* Stop playing */
-				alive = FALSE;
-
-				/* Leaving */
-				p_ptr->leaving = TRUE;
-			}
 		}
 	}
 
@@ -1415,7 +1378,7 @@ static void process_world(void)
 		/* Hack -- Daybreak/Nighfall in town */
 		if ((turn % ((10L * DAY) / 2)) == 0)
 		{
-			bool dawn;
+			bool_ dawn;
 
 			/* Check for dawn */
 			dawn = ((turn % (10L * DAY)) == 0);
@@ -1489,7 +1452,7 @@ static void process_world(void)
 	{
 		char buf[20];
 
-		sprintf(buf, get_day(bst(YEAR, turn) + START_YEAR));
+		sprintf(buf, "%s", get_day(bst(YEAR, turn) + START_YEAR));
 		cmsg_format(TERM_L_GREEN,
 		            "Today it is %s of the %s year of the third age.",
 		            get_month_name(bst(DAY, turn), wizard, FALSE), buf);
@@ -1559,7 +1522,7 @@ static void process_world(void)
 					/* Summon */
 					while (1)
 					{
-						scatter(&yy, &xx, p_ptr->py, p_ptr->px, 6, 0);
+						scatter(&yy, &xx, p_ptr->py, p_ptr->px, 6);
 
 						/* Accept an empty grid within the boundary */
 						if (in_bounds(yy, xx) && cave_floor_bold(yy, xx)) break;
@@ -1872,25 +1835,12 @@ static void process_world(void)
 		if (has_ability(AB_PERFECT_CASTING))
 			upkeep_divider = 15;
 
-#ifdef TRACK_FRIENDS
-
-		if (wizard) msg_format("Total friends: %d.", total_friends);
-
-#endif /* TRACK_FRIENDS */
-
 		if (total_friends > 1 + (p_ptr->lev / (upkeep_divider)))
 		{
 			upkeep_factor = (total_friend_levels);
 
 			if (upkeep_factor > 100) upkeep_factor = 100;
 			else if (upkeep_factor < 10) upkeep_factor = 10;
-
-#ifdef TRACK_FRIENDS
-
-			if (wizard) msg_format("Levels %d, upkeep %d", total_friend_levels,
-				                       upkeep_factor);
-
-#endif /* TRACK_FRIENDS */
 		}
 	}
 
@@ -1901,15 +1851,6 @@ static void process_world(void)
 		{
 			s16b upkeep_regen = (((100 - upkeep_factor) * regen_amount) / 100);
 			regenmana(upkeep_regen);
-
-#ifdef TRACK_FRIENDS
-
-			if (wizard)
-			{
-				msg_format("Regen: %d/%d", upkeep_regen, regen_amount);
-			}
-
-#endif /* TRACK_FRIENDS */
 		}
 		else
 		{
@@ -2064,7 +2005,7 @@ static void process_world(void)
 		/* Dead player */
 		if (p_ptr->chp < 0)
 		{
-			bool old_quick = quick_messages;
+			bool_ old_quick = quick_messages;
 
 			/* Sound */
 			sound(SOUND_DEATH);
@@ -2160,6 +2101,12 @@ static void process_world(void)
 	if (p_ptr->tim_magic_breath)
 	{
 		(void)set_tim_breath(p_ptr->tim_magic_breath - 1, TRUE);
+	}
+
+	/* Timed precognition */
+	if (p_ptr->tim_precognition > 0)
+	{
+		set_tim_precognition(p_ptr->tim_precognition - 1);
 	}
 
 	/* Timed regen */
@@ -2302,11 +2249,6 @@ static void process_world(void)
 	if (p_ptr->tim_invis)
 	{
 		(void)set_tim_invis(p_ptr->tim_invis - 1);
-	}
-
-	if (multi_rew)
-	{
-		multi_rew = FALSE;
 	}
 
 	/* Timed esp */
@@ -2586,8 +2528,6 @@ static void process_world(void)
 		}
 	}
 
-#ifndef pelpel
-
 	/* handle spell effects */
 	if (!p_ptr->wild_mode)
 	{
@@ -2795,8 +2735,6 @@ static void process_world(void)
 		apply_effect(p_ptr->py, p_ptr->px);
 	}
 
-#endif /* !pelpel */
-
 	/* Arg cannot breath? */
 	if ((dungeon_flags2 & DF2_WATER_BREATH) && (!p_ptr->water_breath))
 	{
@@ -2819,7 +2757,7 @@ static void process_world(void)
 	{
 		u32b f1, f2, f3, f4, f5;
 
-		bool be_silent = FALSE;
+		bool_ be_silent = FALSE;
 
 		/* check all equipment for the Black Breath flag. */
 		for (i = INVEN_WIELD; i < INVEN_TOTAL; i++)
@@ -2885,11 +2823,10 @@ static void process_world(void)
 			}
 
 			/* The light is getting dim */
-			else if (o_ptr->timeout < 100)
+			else if ((o_ptr->timeout < 100) && (o_ptr->timeout % 10 == 0))
 			{
 				if (disturb_minor) disturb(0, 0);
 				cmsg_print(TERM_YELLOW, "Your light is growing faint.");
-				drop_from_wild();
 			}
 		}
 	}
@@ -3102,7 +3039,6 @@ static void process_world(void)
 	for (j = 0, i = 0; i < INVEN_TOTAL; i++)
 	{
 		o_ptr = &p_ptr->inventory[i];
-		k_ptr = &k_info[o_ptr->k_idx];
 
 		/* Skip non-objects */
 		if (!o_ptr->k_idx) continue;
@@ -3117,9 +3053,7 @@ static void process_world(void)
 
 			if (o_ptr->timeout <= 0)
 			{
-				inven_item_increase(i, -99);
-				inven_item_describe(i);
-				inven_item_optimize(i);
+				inc_stack_size(i, -99);
 
 				/* Combine and Reorder pack */
 				p_ptr->notice |= (PN_COMBINE | PN_REORDER);
@@ -3221,9 +3155,8 @@ static void process_world(void)
 						m_ptr->status = MSTATUS_COMPANION;
 					}
 
-					inven_item_increase(i, -1);
-					inven_item_describe(i);
-					inven_item_optimize(i);
+					inc_stack_size(i, -1);
+
 					j++;
 				}
 			}
@@ -3238,12 +3171,6 @@ static void process_world(void)
 
 		/* Window stuff */
 		p_ptr->window |= (PW_INVEN);
-	}
-
-	/* Feel the p_ptr->inventory */
-	if (dun_level || (!p_ptr->wild_mode))
-	{
-		sense_inventory();
 	}
 
 	/*** Process Objects ***/
@@ -3384,12 +3311,9 @@ static void process_world(void)
 			 * The player is yanked up/down as soon as
 			 * he loads the autosaved game.
 			 */
-			if (autosave_l && (p_ptr->word_recall == 1))
+			if (p_ptr->word_recall == 1)
 			{
-				is_autosave = TRUE;
-				msg_print("Autosaving the game...");
-				do_cmd_save_game();
-				is_autosave = FALSE;
+				autosave_checkpoint();
 			}
 
 			/* Make SURE that persistent levels are saved
@@ -3456,15 +3380,10 @@ static void process_world(void)
 /*
  * Verify use of "wizard" mode
  */
-static bool enter_wizard_mode(void)
+static bool_ enter_wizard_mode(void)
 {
-#if 0
-	/* Ask first time */
-	if (!(noscore & 0x0002))
-#else
 	/* Ask first time, but not while loading a dead char with the -w option */
 	if (!noscore && !(p_ptr->chp < 0))
-#endif
 	{
 		/* Mention effects */
 		msg_print("Wizard mode is for debugging and experimenting.");
@@ -3486,19 +3405,13 @@ static bool enter_wizard_mode(void)
 }
 
 
-#ifdef ALLOW_WIZARD
-
 /*
  * Verify use of "debug" commands
  */
-static bool enter_debug_mode(void)
+static bool_ enter_debug_mode(void)
 {
 	/* Ask first time */
-#if 0
-	if (!(noscore & 0x0008))
-#else
-if (!noscore && !wizard)
-#endif
+	if (!noscore && !wizard)
 	{
 		/* Mention effects */
 		msg_print("The debug commands are for debugging and experimenting.");
@@ -3525,47 +3438,6 @@ if (!noscore && !wizard)
  */
 extern void do_cmd_debug(void);
 
-#endif /* ALLOW_WIZARD */
-
-
-#ifdef ALLOW_BORG
-
-/*
- * Verify use of "borg" commands
- */
-static bool enter_borg_mode(void)
-{
-	/* Ask first time */
-	if (!(noscore & 0x0010))
-	{
-		/* Mention effects */
-		msg_print("The borg commands are for debugging and experimenting.");
-		msg_print("The game will not be scored if you use borg commands.");
-		msg_print(NULL);
-
-		/* Verify request */
-		if (!get_check("Are you sure you want to use borg commands? "))
-		{
-			return (FALSE);
-		}
-
-		/* Mark savefile */
-		noscore |= 0x0010;
-	}
-
-	/* Success */
-	return (TRUE);
-}
-
-
-/*
- * Hack -- Declare the Ben Borg
- */
-extern void do_cmd_borg(void);
-
-#endif /* ALLOW_BORG */
-
-
 
 /*
  * Parse and execute the current command
@@ -3577,12 +3449,8 @@ static void process_command(void)
 {
 	char error_m[80];
 
-#ifdef ALLOW_REPEAT /* TNB */
-
 	/* Handle repeating the last command */
 	repeat_check();
-
-#endif /* ALLOW_REPEAT -- TNB */
 
 	/* Process the appropriate hooks */
 	if (process_hooks(HOOK_KEYPRESS, "(d)", command_cmd)) return;
@@ -3604,17 +3472,7 @@ static void process_command(void)
 			break;
 		}
 
-#ifdef ALLOW_QUITTING
 
-	case KTRL('L'):
-		{
-			quit("CHEATER");
-			break;
-		}
-
-#endif
-
-#ifdef ALLOW_WIZARD
 
 		/*** Wizard Commands ***/
 
@@ -3652,27 +3510,8 @@ static void process_command(void)
 			break;
 		}
 
-#endif /* ALLOW_WIZARD */
-
-
-#ifdef ALLOW_BORG
-
-		/* Special "borg" commands */
-	case KTRL('Z'):
-		{
-			/* Enter borg mode */
-			if (enter_borg_mode())
-			{
-				if (!p_ptr->wild_mode) do_cmd_borg();
-			}
-
-			break;
-		}
-
-#endif /* ALLOW_BORG */
-
-
-		/*** Inventory Commands ***/
+	
+	/*** Inventory Commands ***/
 
 		/* Wear/wield equipment */
 	case 'w':
@@ -3841,18 +3680,6 @@ static void process_command(void)
 			break;
 		}
 
-#if 0 /* Merged with the '>' command -- pelpel */
-
-		/* Enter quest level -KMW- */
-	case '[':
-		{
-			if (p_ptr->control) break;
-			if (!p_ptr->wild_mode) do_cmd_quest();
-			break;
-		}
-
-#endif /* 0 */
-
 		/* Go up staircase */
 	case '<':
 		{
@@ -3875,10 +3702,6 @@ static void process_command(void)
 			if (p_ptr->wild_mode || dun_level || is_quest(dun_level))
 			{
 				do_cmd_go_up();
-			}
-			else if (vanilla_town)
-			{
-				/* Do nothing */
 			}
 			/* Don't let the player < when he'd just drop right back down */
 			else if (p_ptr->food < PY_FOOD_ALERT)
@@ -3907,10 +3730,6 @@ static void process_command(void)
 			else if (ambush_flag)
 			{
 				msg_print("To flee the ambush you have to reach the edge of the map.");
-			}
-			else if (o_ptr->tval && (f4 & TR4_FUEL_LITE) && (o_ptr->timeout < 100))
-			{
-				msg_print("Your light is too low on fuel for you to travel with it.");
 			}
 			/* TODO: make the above stuff use this hook */
 			else if (!process_hooks(HOOK_FORBID_TRAVEL, "()"))
@@ -4548,8 +4367,6 @@ static void process_command(void)
 			break;
 		}
 
-#ifndef VERIFY_SAVEFILE
-
 		/* Hack -- Save and don't quit */
 	case KTRL('S'):
 		{
@@ -4557,8 +4374,6 @@ static void process_command(void)
 			do_cmd_save_game();
 			break;
 		}
-
-#endif /* VERIFY_SAVEFILE */
 
 	case KTRL('T'):
 		{
@@ -4620,27 +4435,6 @@ static void process_command(void)
 	case CMD_CLI_HELP:
 		{
 			do_cmd_cli_help();
-			break;
-		}
-
-		/* Connect to IRC. */
-	case CMD_IRC_CONNECT:
-		{
-			irc_connect();
-			break;
-		}
-
-		/* Speak on IRC. */
-	case CMD_IRC_CHAT:
-		{
-			irc_chat();
-			break;
-		}
-
-		/* Disconnect from IRC. */
-	case CMD_IRC_DISCON:
-		{
-			irc_disconnect();
 			break;
 		}
 
@@ -4726,13 +4520,6 @@ void process_player(void)
 
 	/*** Apply energy ***/
 
-	if (hack_corruption)
-	{
-		msg_print("You feel different!");
-		(void)gain_random_corruption(0);
-		hack_corruption = FALSE;
-	}
-
 	/* Obtain current speed */
 	speed_use = p_ptr->pspeed;
 
@@ -4773,13 +4560,11 @@ void process_player(void)
 		/* Complete resting */
 		else if (resting == -2)
 		{
-			bool stop = TRUE;
+			bool_ stop = TRUE;
 			object_type *o_ptr;
-			monster_race *r_ptr;
 
 			/* Get the carried monster */
 			o_ptr = &p_ptr->inventory[INVEN_CARRY];
-			r_ptr = &r_info[o_ptr->pval];
 
 			/* Stop resting */
 			if ((!p_ptr->drain_life) && (p_ptr->chp != p_ptr->mhp)) stop = FALSE;
@@ -4886,9 +4671,7 @@ void process_player(void)
 			drop_near(o_ptr, 0, p_ptr->py, p_ptr->px);
 
 			/* Modify, Describe, Optimize */
-			inven_item_increase(item, -255);
-			inven_item_describe(item);
-			inven_item_optimize(item);
+			inc_stack_size(item, -255);
 
 			/* Notice stuff (if needed) */
 			if (p_ptr->notice) notice_stuff();
@@ -4902,10 +4685,6 @@ void process_player(void)
 			/* Redraw stuff (if needed) */
 			if (p_ptr->window) window_stuff();
 		}
-
-
-		/* Hack -- cancel "lurking browse mode" */
-		if (!command_new) command_see = FALSE;
 
 
 		/* Assume free turn */
@@ -5463,35 +5242,6 @@ static void dungeon(void)
 		if (!alive || death) break;
 
 
-#ifdef pelpel
-
-		/* Process spell effects */
-		process_effects();
-
-		/* Notice stuff */
-		if (p_ptr->notice) notice_stuff();
-
-		/* Update stuff */
-		if (p_ptr->update) update_stuff();
-
-		/* Redraw stuff */
-		if (p_ptr->redraw) redraw_stuff();
-
-		/* Redraw stuff */
-		if (p_ptr->window) window_stuff();
-
-		/* Hack -- Hilite the player */
-		move_cursor_relative(p_ptr->py, p_ptr->px);
-
-		/* Optional fresh */
-		if (fresh_after) Term_fresh();
-
-		/* Hack -- Notice death or departure */
-		if (!alive || death) break;
-
-#endif /* pelpel */
-
-
 		total_friends = 0;
 		total_friend_levels = 0;
 
@@ -5525,6 +5275,11 @@ static void dungeon(void)
 
 		/* Process the appropriate hooks */
 		process_hooks(HOOK_END_TURN, "(d)", is_quest(dun_level));
+
+		{
+			hook_end_turn_in in = { is_quest(dun_level) };
+			process_hooks_new(HOOK_END_TURN, &in, NULL);
+		}
 
 		/* Make it pulsate and live !!!! */
 		if ((dungeon_flags1 & DF1_EVOLVE) && dun_level)
@@ -5620,7 +5375,11 @@ static void load_all_pref_files(void)
 	process_pref_file(buf);
 
 	/* Process player specific automatizer sets */
-	tome_dofile_anywhere(ANGBAND_DIR_USER, format("%s.atm", player_name), FALSE);
+	/* TODO: Disabled temporarily because it causes duplicate
+	 * rules on save and subsequent game load. */
+	/* sprintf(buf2, "%s.atm", player_name); */
+	/* path_build(buf, sizeof(buf), ANGBAND_DIR_USER, buf2); */
+	/* automatizer_init(buf); */
 }
 
 /*
@@ -5630,13 +5389,11 @@ static void load_all_pref_files(void)
  * savefile, we will commit suicide, if necessary, to allow the
  * player to start a new game.
  */
-void play_game(bool new_game)
+void play_game(bool_ new_game)
 {
 	int i, tmp_dun;
 
-	bool cheat_death = FALSE;
-
-	hack_corruption = FALSE;
+	bool_ cheat_death = FALSE;
 
 	/* Hack -- Character is "icky" */
 	character_icky = TRUE;
@@ -5697,16 +5454,12 @@ void play_game(bool new_game)
 		}
 	}
 
-#if 1
-
 	/* Process old character */
 	if (!new_game)
 	{
 		/* Process the player name */
 		process_player_name(FALSE);
 	}
-
-#endif
 
 	/* Init the RNG */
 	if (Rand_quick)
@@ -5758,32 +5511,14 @@ void play_game(bool new_game)
 	/* Roll new character */
 	if (new_game)
 	{
-		s32b ret;
-
-		/* Are we authorized to create new chars? */
-		call_lua("get_module_info", "(s)", "d", "allow_birth", &ret);
-
-		if (!ret)
-		{
-			msg_box("Sorry, this module does not allow character creation.", -1, -1);
-
-			/* Close stuff */
-			close_game();
-
-			/* Quit */
-			quit(NULL);
-		}
-
-		process_hooks(HOOK_INIT, "()");
+		/* Show intro */
+		modules[game_module_idx].intro();
 
 		/* The dungeon is not ready */
 		character_dungeon = FALSE;
 
 		/* Hack -- seed for flavors */
 		seed_flavor = rand_int(0x10000000);
-
-		/* Hack -- seed for town layout */
-		seed_town = rand_int(0x10000000);
 
 		/* Roll up a new character */
 		player_birth();
@@ -5848,7 +5583,8 @@ void play_game(bool new_game)
 
 	/* Initialize hooks */
 	init_hooks();
-	ingame_help(p_ptr->help.enabled);
+	init_hooks_help();
+	init_hooks_module();
 
 	/* React to changes */
 	Term_xtra(TERM_XTRA_REACT, 0);
@@ -5871,6 +5607,7 @@ void play_game(bool new_game)
 
 	/* Ok tell the scripts that the game is about to start */
 	process_hooks(HOOK_GAME_START, "()");
+	process_hooks_new(HOOK_GAME_START, NULL, NULL);
 
 	/* Character is now "complete" */
 	character_generated = TRUE;
@@ -5912,28 +5649,8 @@ void play_game(bool new_game)
 		/* Update monster list window */
 		p_ptr->window |= (PW_M_LIST);
 
-#ifdef SAVE_HACK
-
-		/* Process the level */
-		if (!save_hack)
-		{
-			dungeon();
-		}
-		else
-		{
-			generate_cave();
-		}
-
-		save_hack = FALSE;
-
-		p_ptr->leaving = TRUE;
-
-#else
-
 		/* Process the level */
 		dungeon();
-
-#endif
 
 		/* Save the current level if in a persistent level */
 		tmp_dun = dun_level;

@@ -3,6 +3,11 @@
 #ifndef INCLUDED_H_TYPE_H
 #define INCLUDED_H_TYPE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 /*
  * Basic "types".
  *
@@ -78,13 +83,6 @@ typedef int errr;
 #undef byte
 #define byte byte_hack
 
-/*
- * Hack -- prevent problems with C++
- */
-#undef bool
-#define bool bool_hack
-
-
 /* Note that "signed char" is not always "defined" */
 /* So always use "s16b" to hold small signed values */
 /* A signed byte of memory */
@@ -96,7 +94,7 @@ typedef unsigned char byte;
 
 /* Note that a bool is smaller than a full "int" */
 /* Simple True/False type */
-typedef char bool;
+typedef char bool_;
 
 
 /* A signed, standard integer (at least 2 bytes) */
@@ -116,14 +114,20 @@ typedef unsigned long huge;
 /* Signed/Unsigned 16 bit value */
 typedef signed short s16b;
 typedef unsigned short u16b;
+#define FMTs16b "%hd"
+#define FMTu16b "%hu"
 
 /* Signed/Unsigned 32 bit value */
 #ifdef L64	/* 64 bit longs */
 typedef signed int s32b;
 typedef unsigned int u32b;
+#define FMTs32b "%d"
+#define FMTu32b "%u"
 #else
 typedef signed long s32b;
 typedef unsigned long u32b;
+#define FMTs32b "%ld"
+#define FMTu32b "%lu"
 #endif
 
 
@@ -133,7 +137,7 @@ typedef real *real_ptr;
 typedef errr *errr_ptr;
 typedef char *char_ptr;
 typedef byte *byte_ptr;
-typedef bool *bool_ptr;
+typedef bool_ *bool_ptr;
 typedef sint *sint_ptr;
 typedef uint *uint_ptr;
 typedef long *long_ptr;
@@ -153,7 +157,7 @@ typedef void	(*func_void)();
 typedef errr	(*func_errr)();
 typedef char	(*func_char)();
 typedef byte	(*func_byte)();
-typedef bool	(*func_bool)();
+typedef bool_	(*func_bool)();
 typedef sint	(*func_sint)();
 typedef uint	(*func_uint)();
 typedef real	(*func_real)();
@@ -168,7 +172,7 @@ typedef cptr	(*func_cptr)();
 typedef errr	(*func_gen)(vptr, vptr);
 
 /* An equality testing function takes two things to compare (bool) */
-typedef bool	(*func_eql)(vptr, vptr);
+typedef bool_	(*func_eql)(vptr, vptr);
 
 /* A comparison function takes two things and to compare (-1,0,+1) */
 typedef sint	(*func_cmp)(vptr, vptr);
@@ -180,6 +184,10 @@ typedef uint	(*func_hsh)(vptr, uint);
 typedef vptr	(*func_key)(vptr);
 
 
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif
 

@@ -123,7 +123,7 @@
  *
  *   FREF 130 = ANGBAND_CREATOR / 'APPL' (application)
  *   FREF 129 = ANGBAND_CREATOR / 'SAVE' (save file)
- *   FREF 130 = ANGBAND_CREATOR / 'TEXT' (bone file, generic text file)
+ *   FREF 130 = ANGBAND_CREATOR / 'TEXT' (generic text file)
  *   FREF 131 = ANGBAND_CREATOR / 'DATA' (binary image file, score file)
  *
  *   DLOG 128 = "About Angband..."
@@ -139,8 +139,6 @@
  *
  *   MBAR 128 = array of MENU id's (128, 129, 130, 131, 132, 133, 134)
  *   MENU 128 = apple (about, -, ...)
- *   MENU 129 = File (new, open, close, save, -, score, quit)
- *     (If SAVEFILE_SCREEN is defined)
  *   MENU 129 = File (close, save, -, score, quit)
  *   MENU 130 = Edit (undo, -, cut, copy, paste, clear)
  *   MENU 131 = Font (bold, wide, -)
@@ -174,7 +172,6 @@
  *
  * File name patterns:
  *   all 'APEX' files have a filename of the form "*:apex:*" (?)
- *   all 'BONE' files have a filename of the form "*:bone:*" (?)
  *   all 'DATA' files have a filename of the form "*:data:*"
  *   all 'SAVE' files have a filename of the form "*:save:*"
  *   all 'USER' files have a filename of the form "*:user:*" (?)
@@ -232,9 +229,6 @@
  * INCLUDES =
  * DEFINES = -DMACH_O_CARBON -DANGBAND30X
  * LIBS = -framework CoreFoundation -framework QuickTime -framework Carbon
- *
- * -DANGBAND30X only affects main-crb.c. This is because I'm also compiling
- * a couple of variants, and this arrangement makes my life easier.
  *
  * Never, ever #define MACINTOSH.  It'll wreck havoc in system interface
  * (mostly because of totally different pathname convention).
@@ -479,12 +473,10 @@
 
 #if defined(MACINTOSH) || defined(MACH_O_CARBON)
 
-#ifdef PRIVATE_USER_PATH
-
 /*
  * Check and create if needed the directory dirpath
  */
-bool private_check_user_directory(cptr dirpath)
+bool_ private_check_user_directory(cptr dirpath)
 {
 	/* Is this used anywhere else in *bands? */
 	struct stat stat_buf;
@@ -526,16 +518,13 @@ bool private_check_user_directory(cptr dirpath)
  * home directory or try to create it if it doesn't exist.
  * Returns FALSE if all the attempts fail.
  */
-static bool check_create_user_dir(void)
+static bool_ check_create_user_dir(void)
 {
 	char dirpath[1024];
 	char versionpath[1024];
 	char savepath[1024];
 #ifdef PRIVATE_USER_PATH_DATA
 	char datapath[1024];
-#endif
-#ifdef PRIVATE_USER_PATH_APEX
-	char apexpath[1024];
 #endif
 
 	/* Get an absolute path from the filename */
@@ -548,10 +537,6 @@ static bool check_create_user_dir(void)
 	strcpy(datapath, versionpath);
 	strcat(datapath, "/data");
 #endif
-#ifdef PRIVATE_USER_PATH_APEX
-	strcpy(apexpath, versionpath);
-	strcat(apexpath, "/apex");
-#endif
 
 	return /* don't forget, the dirpath muts come first */
 	       private_check_user_directory(dirpath) &&
@@ -559,13 +544,8 @@ static bool check_create_user_dir(void)
 #ifdef PRIVATE_USER_PATH_DATA
 	       private_check_user_directory(datapath) &&
 #endif
-#ifdef PRIVATE_USER_PATH_APEX
-	       private_check_user_directory(apexpath) &&
-#endif
 	       private_check_user_directory(savepath);
 }
-
-#endif /* PRIVATE_USER_PATH */
 
 
 /*
@@ -573,9 +553,6 @@ static bool check_create_user_dir(void)
  *
  * #define ALLOW_BIG_SCREEN (V, Ey, O, T.o.M.E., and Z.  Dr's big screen needs
  * more work.  New S one is too idiosyncratic...)
- * #define ANG281_RESET_VISUALS (Cth, Gum, T.o.M.E., Z)
- * #define SAVEFILE_SCREEN (T.o.M.E.)
- * #define ZANG_AUTO_SAVE (O and Z)
  * #define HAS_SCORE_MENU (V and T.o.M.E.)
  * #define ANGBAND_CREATOR four letter code for your variant, if any.
  * or use the default one.
@@ -585,22 +562,10 @@ static bool check_create_user_dir(void)
  * that has some interesting features.
  */
 
-/* Some porting examples */
-#ifdef ANGBAND30X
-# define USE_DOUBLE_TILES
-# define ALLOW_BIG_SCREEN
-# define HAS_SCORE_MENU
-# define NEW_ZVIRT_HOOKS
-/* I can't ditch this, yet, because there are many variants */
-# define USE_TRANSPARENCY
-#endif /* ANGBAND30X */
-
-# define USE_DOUBLE_TILES
-# define SAVEFILE_SCREEN
-# define ANG281_RESET_VISUALS
-# define ALLOW_BIG_SCREEN
-# define HAS_SCORE_MENU
-# define ANGBAND_CREATOR 'PrnA'
+#define USE_DOUBLE_TILES
+#define ALLOW_BIG_SCREEN
+#define HAS_SCORE_MENU
+#define ANGBAND_CREATOR 'PrnA'
 
 /* Default creator signature */
 #ifndef ANGBAND_CREATOR
@@ -777,7 +742,7 @@ struct term_data
 /*
  * Forward declare -- see below
  */
-static bool CheckEvents(bool wait);
+static bool_ CheckEvents(bool_ wait);
 
 
 #ifndef MACH_O_CARBON
@@ -840,7 +805,7 @@ static term_data data[MAX_TERM_DATA];
 /*
  * Note when "open"/"new" become valid
  */
-static bool initialized = FALSE;
+static bool_ initialized = FALSE;
 
 
 
@@ -2489,11 +2454,7 @@ static errr Term_xtra_mac_react(void)
 		term_data_resize(td);
 
 		/* Reset visuals */
-#ifndef ANG281_RESET_VISUALS
-		reset_visuals(TRUE);
-#else
 		reset_visuals();
-#endif /* !ANG281_RESET_VISUALS */
 	}
 
 	/* Success */
@@ -2877,18 +2838,9 @@ static errr Term_text_mac(int x, int y, int n, byte a, const char *cp)
  *
  * Erase "n" characters starting at (x,y)
  */
-#ifdef USE_TRANSPARENCY
-# ifdef USE_EGO_GRAPHICS
 static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp,
                           const byte *tap, const char *tcp,
                           const byte *eap, const char *ecp)
-# else /* USE_EGO_GRAPHICS */
-static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp,
-                          const byte *tap, const char *tcp)
-# endif  /* USE_EGO_GRAPHICS */
-#else /* USE_TRANSPARENCY */
-static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
-#endif /* USE_TRANSPARENCY */
 {
 	int i;
 	Rect dst_r;
@@ -2921,20 +2873,16 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 	/* Scan the input */
 	for (i = 0; i < n; i++)
 	{
-		bool done = FALSE;
+		bool_ done = FALSE;
 
 		byte a = *ap++;
 		char c = *cp++;
 
-#ifdef USE_TRANSPARENCY
 		byte ta = *tap++;
 		char tc = *tcp++;
-# ifdef USE_EGO_GRAPHICS
 		byte ea = *eap++;
 		char ec = *ecp++;
-		bool has_overlay = (ea && ec);
-# endif  /* USE_EGO_GRAPHICS */
-#endif
+		bool_ has_overlay = (ea && ec);
 
 
 #ifdef USE_DOUBLE_TILES
@@ -2959,14 +2907,10 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 		{
 			int col, row;
 			Rect src_r;
-#ifdef USE_TRANSPARENCY
 			int t_col, t_row;
 			Rect terrain_r;
-# ifdef USE_EGO_GRAPHICS
 			int e_col, e_row;
 			Rect ego_r;
-# endif  /* USE_EGO_GRAPHICS */
-#endif /* USE_TRANSPARENCY */
 
 			/* Row and Col */
 			row = ((byte)a & 0x7F) % pict_rows;
@@ -2978,7 +2922,6 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 			src_r.right = src_r.left + graf_width;
 			src_r.bottom = src_r.top + graf_height;
 
-#ifdef USE_TRANSPARENCY
 			/* Row and Col */
 			t_row = ((byte)ta & 0x7F) % pict_rows;
 			t_col = ((byte)tc & 0x7F) % pict_cols;
@@ -2988,8 +2931,6 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 			terrain_r.top = t_row * graf_height;
 			terrain_r.right = terrain_r.left + graf_width;
 			terrain_r.bottom = terrain_r.top + graf_height;
-
-# ifdef USE_EGO_GRAPHICS
 
 			/* If there's an overlay */
 			if (has_overlay)
@@ -3004,10 +2945,6 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 				ego_r.right = ego_r.left + graf_width;
 				ego_r.bottom = ego_r.top + graf_height;
 			}
-
-# endif  /* USE_EGO_GRAPHICS */
-
-#endif /* USE_TRANSPARENCY */
 
 			/* Hardwire CopyBits */
 			RGBBackColor(&white);
@@ -3035,8 +2972,6 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 
 			/* Get Pixmap handle */
 			pixmap_h = GetPortPixMap(port);
-
-#ifdef USE_TRANSPARENCY
 
 			/* Transparency effect */
 			switch (transparency_mode)
@@ -3070,8 +3005,6 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 						         (BitMap*)*pixmap_h,
 						         &src_r, &dst_r, transparent, NULL);
 
-# ifdef USE_EGO_GRAPHICS
-
 					/* Draw overlay if there's one */
 					if (has_overlay)
 					{
@@ -3080,20 +3013,9 @@ static errr Term_pict_mac(int x, int y, int n, const byte *ap, const char *cp)
 						         &ego_r, &dst_r, transparent, NULL);
 					}
 
-# endif  /* USE_EGO_GRAPHICS */
-
 					break;
 				}
 			}
-
-#else /* USE_TRANSPARENCY */
-
-			/* Draw the picture */
-			CopyBits((BitMap*)frameP->framePix,
-			         (BitMap*)*pixmap_h,
-			         &src_r, &dst_r, srcCopy, NULL);
-
-#endif /* USE_TRANSPARENCY */
 
 			/* Release the lock and dispose the PixMap handle */
 			UnlockPortBits(port);
@@ -3196,13 +3118,6 @@ static void term_data_link(int i)
 	td->t->curs_hook = Term_curs_mac;
 	td->t->text_hook = Term_text_mac;
 	td->t->pict_hook = Term_pict_mac;
-
-#if 0
-
-	/* Doesn't make big difference? */
-	td->t->never_bored = TRUE;
-
-#endif
 
 	/* Link the local structure */
 	td->t->data = (void *)(td);
@@ -3380,7 +3295,7 @@ static void save_pref_short(const char *key, short value)
  * Load preference value for key, returns TRUE if it succeeds with
  * vptr updated appropriately, FALSE otherwise.
  */
-static bool query_load_pref_short(const char *key, short *vptr)
+static bool_ query_load_pref_short(const char *key, short *vptr)
 {
 	CFStringRef cf_key;
 	CFNumberRef cf_value;
@@ -3500,7 +3415,7 @@ static void cf_save_prefs()
  */
 static void cf_load_prefs()
 {
-	bool ok;
+	bool_ ok;
 	short pref_major, pref_minor, pref_patch, pref_extra;
 	int i;
 
@@ -3522,25 +3437,6 @@ static void cf_load_prefs()
 		/* Ignore the rest */
 		return;
 	}
-
-#if 0
-
-	/* Check version */
-	if ((pref_major != PREF_VER_MAJOR) ||
-	                (pref_minor != PREF_VER_MINOR) ||
-	                (pref_patch != PREF_VER_PATCH) ||
-	                (pref_extra != PREF_VER_EXTRA))
-	{
-		/* Message */
-		mac_warning(
-		        format("Ignoring %d.%d.%d.%d preferences.",
-		               pref_major, pref_minor, pref_patch, pref_extra));
-
-		/* Ignore */
-		return;
-	}
-
-#endif
 
 	/* Gfx settings */
 	{
@@ -3741,195 +3637,6 @@ static void save_pref_file(void)
 }
 
 
-
-
-#ifndef SAVEFILE_SCREEN
-
-/*
- * Prepare savefile dialogue and set the variable
- * savefile accordingly. Returns true if it succeeds, false (or
- * aborts) otherwise. If all is false, only allow files whose type
- * is 'SAVE'.
- * Originally written by Peter Ammon
- */
-static bool select_savefile(bool all)
-{
-	OSErr err;
-	FSSpec theFolderSpec;
-	FSSpec savedGameSpec;
-	NavDialogOptions dialogOptions;
-	NavReplyRecord reply;
-	/* Used only when 'all' is true */
-	NavTypeList types = {ANGBAND_CREATOR, 1, 1, {'SAVE'}};
-	NavTypeListHandle myTypeList;
-	AEDesc defaultLocation;
-
-#ifdef MACH_O_CARBON
-
-	/* Find the save folder */
-	err = path_to_spec(ANGBAND_DIR_SAVE, &theFolderSpec);
-
-#else
-
-	/* Find :lib:save: folder */
-	err = FSMakeFSSpec(
-	              app_vol,
-	              app_dir,
-	              "\p:lib:save:",
-	              &theFolderSpec);
-
-#endif
-
-	/* Oops */
-	if (err != noErr) quit("Unable to find the folder :lib:save:");
-
-	/* Get default Navigator dialog options */
-	err = NavGetDefaultDialogOptions(&dialogOptions);
-
-	/* Clear preview option */
-	dialogOptions.dialogOptionFlags &= ~kNavAllowPreviews;
-
-	/* Disable multiple file selection */
-	dialogOptions.dialogOptionFlags &= ~kNavAllowMultipleFiles;
-
-	/* Make descriptor for default location */
-	err = AECreateDesc(
-	              typeFSS,
-	              &theFolderSpec,
-	              sizeof(FSSpec),
-	              &defaultLocation);
-
-	/* Oops */
-	if (err != noErr) quit("Unable to allocate descriptor");
-
-	/* We are indifferent to signature and file types */
-	if (all)
-	{
-		myTypeList = (NavTypeListHandle)nil;
-	}
-
-	/* Set up type handle */
-	else
-	{
-		err = PtrToHand(&types, (Handle *) & myTypeList, sizeof(NavTypeList));
-
-		/* Oops */
-		if (err != noErr) quit("Error in PtrToHand. Try enlarging heap");
-
-	}
-
-	/* Call NavGetFile() with the types list */
-	err = NavChooseFile(
-	              &defaultLocation,
-	              &reply,
-	              &dialogOptions,
-	              nil,
-	              nil,
-	              nil,
-	              myTypeList,
-	              nil);
-
-	/* Free type list */
-	DisposeHandle((Handle)myTypeList);
-
-	/* Invalid response -- allow the user to cancel */
-	if (!reply.validRecord) return (FALSE);
-
-	/* Retrieve FSSpec from the reply */
-	if (err == noErr)
-	{
-		AEKeyword theKeyword;
-		DescType actualType;
-		Size actualSize;
-
-		/* Get a pointer to selected file */
-		(void)AEGetNthPtr(
-		        &reply.selection,
-		        1,
-		        typeFSS,
-		        &theKeyword,
-		        &actualType,
-		        &savedGameSpec,
-		        sizeof(FSSpec),
-		        &actualSize);
-
-		/* Dispose NavReplyRecord, resources and descriptors */
-		(void)NavDisposeReply(&reply);
-	}
-
-	/* Dispose location info */
-	AEDisposeDesc(&defaultLocation);
-
-#ifdef MACH_O_CARBON
-
-	/* Convert FSSpec to pathname and store it in variable savefile */
-	(void)spec_to_path(&savedGameSpec, savefile, sizeof(savefile));
-
-#else
-
-	/* Convert FSSpec to pathname and store it in variable savefile */
-	refnum_to_name(
-	        savefile,
-	        savedGameSpec.parID,
-	        savedGameSpec.vRefNum,
-	        (char *)savedGameSpec.name);
-
-#endif
-
-	/* Success */
-	return (TRUE);
-}
-
-
-/*
- * Handle menu: "File" + "New"
- */
-static void do_menu_file_new(void)
-{
-	/* Hack */
-	HiliteMenu(0);
-
-	/* Game is in progress */
-	game_in_progress = 1;
-
-	/* Flush input */
-	Term_flush();
-
-	/* Play a game */
-	play_game(TRUE);
-
-	/* Hack -- quit */
-	quit(NULL);
-}
-
-
-/*
- * Handle menu: "File" + "Open" /  "Import"
- */
-static void do_menu_file_open(bool all)
-{
-	/* Let the player to choose savefile */
-	if (!select_savefile(all)) return;
-
-	/* Hack */
-	HiliteMenu(0);
-
-	/* Game is in progress */
-	game_in_progress = 1;
-
-	/* Flush input */
-	flush();
-
-	/* Play a game */
-	play_game(FALSE);
-
-	/* Hack -- quit */
-	quit(NULL);
-}
-
-#endif /* !SAVEFILE_SCREEN */
-
-
 /*
  * Handle the "open_when_ready" flag
  */
@@ -3950,12 +3657,8 @@ static void handle_open_when_ready(void)
 		/* Flush input */
 		flush();
 
-#ifdef SAVEFILE_SCREEN
-
 		/* User double-clicked savefile; no savefile screen */
 		no_begin_screen = TRUE;
-
-#endif /* SAVEFILE_SCREEN */
 
 		/* Play a game */
 		play_game(FALSE);
@@ -3974,8 +3677,6 @@ static void handle_open_when_ready(void)
  * The standard menus are:
  *
  *   Apple (128) =   { About, -, ... }
- *   File (129) =    { New,Open,Import,Close,Save,-,Score,Quit }
- *     (If SAVEFILE_SCREEN is defined, this becomes)
  *   File (129) =    { Close,Save,-,Score,Quit }
  *   Edit (130) =    { Cut, Copy, Paste, Clear }   (?)
  *   Font (131) =    { Bold, Extend, -, Monaco, ..., -, ... }
@@ -3992,28 +3693,14 @@ static void handle_open_when_ready(void)
 
 /* File menu */
 #define MENU_FILE	129
-#ifndef SAVEFILE_SCREEN
-# define ITEM_NEW	1
-# define ITEM_OPEN	2
-# define ITEM_IMPORT	3
-# define ITEM_CLOSE	4
-# define ITEM_SAVE	5
-# ifdef HAS_SCORE_MENU
-# define ITEM_SCORE 7
-# define ITEM_QUIT	8
-# else
-# define ITEM_QUIT	7
-# endif  /* HAS_SCORE_MENU */
-#else /* !SAVEFILE_SCREEN - in-game savefile menu */
-# define ITEM_CLOSE	1
-# define ITEM_SAVE	2
-# ifdef HAS_SCORE_MENU
-# define ITEM_SCORE 4
-# define ITEM_QUIT	5
-# else
-# define ITEM_QUIT	4
-# endif  /* HAS_SCORE_MENU */
-#endif /* !SAVEFILE_SCREEN */
+#define ITEM_CLOSE	1
+#define ITEM_SAVE	2
+#ifdef HAS_SCORE_MENU
+#define ITEM_SCORE	4
+#define ITEM_QUIT	5
+#else
+#define ITEM_QUIT	4
+#endif  /* HAS_SCORE_MENU */
 
 /* Edit menu */
 #define MENU_EDIT	130
@@ -4048,7 +3735,6 @@ static void handle_open_when_ready(void)
 # define SUBMENU_TILEWIDTH 145
 #define ITEM_TILEHEIGHT 4
 # define SUBMENU_TILEHEIGHT 146
-#define ITEM_FIDDLE	6
 #define ITEM_WIZARD	7
 
 
@@ -4383,18 +4069,6 @@ static void setup_menus(void)
 		CheckMenuItem(m, i, FALSE);
 	}
 
-#ifndef SAVEFILE_SCREEN
-
-	/* Enable "new"/"open..."/"import..." */
-	if (initialized && !game_in_progress)
-	{
-		EnableMenuItem(m, ITEM_NEW);
-		EnableMenuItem(m, ITEM_OPEN);
-		EnableMenuItem(m, ITEM_IMPORT);
-	}
-
-#endif /* !SAVEFILE_SCREEN */
-
 	/* Enable "close" */
 	if (initialized)
 	{
@@ -4686,10 +4360,6 @@ static void setup_menus(void)
 		}
 	}
 
-	/* Item "arg_fiddle" */
-	EnableMenuItem(m, ITEM_FIDDLE);
-	CheckMenuItem(m, ITEM_FIDDLE, arg_fiddle);
-
 	/* Item "arg_wizard" */
 	EnableMenuItem(m, ITEM_WIZARD);
 	CheckMenuItem(m, ITEM_WIZARD, arg_wizard);
@@ -4791,30 +4461,6 @@ static void menu(long mc)
 		{
 			switch (selection)
 			{
-#ifndef SAVEFILE_SCREEN
-
-				/* New */
-			case ITEM_NEW:
-				{
-					do_menu_file_new();
-					break;
-				}
-
-				/* Open... */
-			case ITEM_OPEN:
-				{
-					do_menu_file_open(FALSE);
-					break;
-				}
-
-				/* Import... */
-			case ITEM_IMPORT:
-				{
-					do_menu_file_open(TRUE);
-					break;
-				}
-
-#endif /* !SAVEFILE_SCREEN */
 
 				/* Close */
 			case ITEM_CLOSE:
@@ -4844,11 +4490,7 @@ static void menu(long mc)
 					msg_flag = FALSE;
 
 					/* Hack -- Save the game */
-#ifndef ZANG_AUTO_SAVE
 					do_cmd_save_game();
-#else
-					do_cmd_save_game(FALSE);
-#endif /* !ZANG_AUTO_SAVE */
 
 					break;
 				}
@@ -4858,72 +4500,7 @@ static void menu(long mc)
 				/* Show score */
 			case ITEM_SCORE:
 				{
-					char buf[1024];
-
-					/* Paranoia */
-					if (!initialized || character_icky ||
-					                !game_in_progress || !character_generated)
-					{
-						/* Can't happen but just in case */
-						plog("You may not do that right now.");
-
-						break;
-					}
-
-					/* Build the pathname of the score file */
-					path_build(buf, sizeof(buf), ANGBAND_DIR_APEX,
-					           "scores.raw");
-
-					/* Hack - open the score file for reading */
-					highscore_fd = fd_open(buf, O_RDONLY);
-
-					/* Paranoia - No score file */
-					if (highscore_fd < 0)
-					{
-						msg_print("Score file is not available.");
-
-						break;
-					}
-
-					/* Mega-Hack - prevent various functions XXX XXX XXX */
-					initialized = FALSE;
-
-					/* Save screen */
-					screen_save();
-
-					/* Clear screen */
-					Term_clear();
-
-					/* Prepare scores */
-					if (game_in_progress && character_generated)
-					{
-						predict_score();
-					}
-
-#if 0 /* I don't like this - pelpel */
-
-					/* Mega-Hack - No current player XXX XXX XXX XXX */
-					else
-					{
-						display_scores_aux(0, MAX_HISCORES, -1, NULL);
-					}
-
-#endif
-
-					/* Close the high score file */
-					(void)fd_close(highscore_fd);
-
-					/* Forget the fd */
-					highscore_fd = -1;
-
-					/* Restore screen */
-					screen_load();
-
-					/* Hack - Flush it */
-					Term_fresh();
-
-					/* Mega-Hack - We are ready again */
-					initialized = TRUE;
+					predict_score_gui(&initialized, &game_in_progress);
 
 					/* Done */
 					break;
@@ -4941,11 +4518,7 @@ static void menu(long mc)
 						msg_flag = FALSE;
 
 						/* Save the game */
-#ifndef ZANG_AUTO_SAVE
 						do_cmd_save_game();
-#else
-						do_cmd_save_game(FALSE);
-#endif /* !ZANG_AUTO_SAVE */
 					}
 
 					/* Quit */
@@ -5156,13 +4729,6 @@ static void menu(long mc)
 
 					/* React to changes */
 					Term_xtra(TERM_XTRA_REACT, 0);
-
-					break;
-				}
-
-			case ITEM_FIDDLE:
-				{
-					arg_fiddle = !arg_fiddle;
 
 					break;
 				}
@@ -5455,11 +5021,7 @@ static void quit_calmly(void)
 		msg_flag = FALSE;
 
 		/* Save the game */
-#ifndef ZANG_AUTO_SAVE
 		do_cmd_save_game();
-#else
-		do_cmd_save_game(FALSE);
-#endif /* !ZANG_AUTO_SAVE */
 
 		/* Quit */
 		quit(NULL);
@@ -5527,7 +5089,7 @@ static void quit_calmly(void)
  * undesirable monopoly of CPU. The side-effect is that you cannot do
  * while (CheckEvents(TRUE)); without discretion.
  */
-static bool CheckEvents(bool wait)
+static bool_ CheckEvents(bool_ wait)
 {
 	EventRecord event;
 
@@ -5572,19 +5134,6 @@ static bool CheckEvents(bool wait)
 	/* Analyze the event */
 	switch (event.what)
 	{
-
-#if 0
-
-	case activateEvt:
-		{
-			w = (WindowPtr)event.message;
-
-			activate(w);
-
-			break;
-		}
-
-#endif
 
 	case updateEvt:
 		{
@@ -5906,13 +5455,6 @@ static bool CheckEvents(bool wait)
 			/* Handle "quit_when_ready" */
 			if (quit_when_ready)
 			{
-#if 0 /* Doesn't work with Aqua well */
-				/* Forget */
-				quit_when_ready = FALSE;
-
-				/* Do the menu key */
-				menu(MenuKey('q'));
-#endif
 				/* Turn off the menus */
 				HiliteMenu(0);
 			}
@@ -5946,11 +5488,7 @@ static void *lifeboat = NULL;
 /*
  * Hook to "release" memory
  */
-#ifdef NEW_ZVIRT_HOOKS /* [V] removed the unused 'size' argument. */
-static void *hook_rnfree(void *v)
-#else
 static void *hook_rnfree(void *v, size_t size)
-#endif /* NEW_ZVIRT_HOOKS */
 {
 
 #ifdef USE_MALLOC
@@ -6182,18 +5720,9 @@ static void init_stuff(void)
 		/* Display location */
 		dialogOptions.location = topleft;
 
-#if 0
-
-		/* Load the message for the missing folder from the resource fork */
-		/* GetIndString(dialogOptions.message, 128, 1); */
-
-#else
-
 		/* Set the message for the missing folder XXX XXX */
 		strcpy(dialogOptions.message + 1, "Please select the \"lib\" folder");
 		dialogOptions.message[0] = strlen(dialogOptions.message + 1);
-
-#endif
 
 		/* Wait for the user to choose a folder */
 		err = NavChooseFolder(
@@ -6390,10 +5919,8 @@ int main(void)
 	/* Note the "system" */
 	ANGBAND_SYS = "mac";
 
-#ifdef PRIVATE_USER_PATH
 	if (check_create_user_dir() == FALSE)
 		quit("Cannot create directory " PRIVATE_USER_PATH);
-#endif
 
 	/* Initialize */
 	init_stuff();
@@ -6413,19 +5940,6 @@ int main(void)
 	/* Handle "open_when_ready" */
 	handle_open_when_ready();
 
-#ifndef SAVEFILE_SCREEN
-
-	/* Prompt the user - You may have to change this for some variants */
-	prt("[Choose 'New' or 'Open' from the 'File' menu]", 23, 15);
-
-	/* Flush the prompt */
-	Term_fresh();
-
-	/* Hack -- Process Events Forever */
-	while (TRUE) CheckEvents(TRUE);
-
-#else
-
 	/* Game is in progress */
 	game_in_progress = 1;
 
@@ -6443,7 +5957,6 @@ int main(void)
 
 	/* Since it's a int function */
 	return (0);
-#endif /* !SAVEFILE_SCREEN */
 }
 
 #endif /* MACINTOSH || MACH_O_CARBON */

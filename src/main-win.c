@@ -101,11 +101,7 @@
 #define IDM_FILE_NEW			100
 #define IDM_FILE_OPEN			101
 #define IDM_FILE_SAVE			110
-#ifdef ALLOW_QUITTING
-# define IDM_FILE_ABORT	120
-#else
-# define IDM_FILE_SCORE	120
-#endif
+#define IDM_FILE_SCORE	120
 #define IDM_FILE_EXIT			121
 
 #define IDM_WINDOW_VIS_0		200
@@ -231,14 +227,6 @@
  * Include the "windows" support file
  */
 #include <windows.h>
-
-/*
- * For IRC stuff
- */
-#ifdef USE_WINSOCK
-#define ZSOCK_TIMER_ID   1
-#define ZSOCK_TIMER_RATE 50
-#endif
 
 
 /*
@@ -367,13 +355,13 @@ struct _term_data
 	uint size_ow2;
 	uint size_oh2;
 
-	bool size_hack;
+	bool_ size_hack;
 
-	bool xtra_hack;
+	bool_ xtra_hack;
 
-	bool visible;
+	bool_ visible;
 
-	bool bizarre;
+	bool_ bizarre;
 
 	cptr font_want;
 
@@ -407,22 +395,22 @@ static term_data *my_td;
 /*
  * game in progress
  */
-bool game_in_progress = FALSE;
+bool_ game_in_progress = FALSE;
 
 /*
  * note when "open"/"new" become valid
  */
-bool initialized = FALSE;
+bool_ initialized = FALSE;
 
 /*
  * screen paletted, i.e. 256 colors
  */
-bool paletted = FALSE;
+bool_ paletted = FALSE;
 
 /*
  * 16 colors screen, don't use RGB()
  */
-bool colors16 = FALSE;
+bool_ colors16 = FALSE;
 
 /*
  * Saved instance handle
@@ -460,21 +448,17 @@ static HWND hwndSaver;
 /*
  * Flag set once "graphics" has been initialized
  */
-static bool can_use_graphics = FALSE;
+static bool_ can_use_graphics = FALSE;
 
 /*
  * The global bitmap
  */
 static DIBINIT infGraph;
 
-#ifdef USE_TRANSPARENCY
-
 /*
  * The global bitmap mask
  */
 static DIBINIT infMask;
-
-#endif /* USE_TRANSPARENCY */
 
 #endif /* USE_GRAPHICS */
 
@@ -484,7 +468,7 @@ static DIBINIT infMask;
 /*
  * Flag set once "sound" has been initialized
  */
-static bool can_use_sound = FALSE;
+static bool_ can_use_sound = FALSE;
 
 /*
  * An array of sound file names
@@ -557,10 +541,9 @@ static BYTE win_pal[256] =
 /*
  * Hack -- define which keys are "special"
  */
-static bool special_key[256];
-static bool ignore_key[256];
+static bool_ special_key[256];
+static bool_ ignore_key[256];
 
-#if 1
 /*
  * Hack -- initialization list for "special_key"
  */
@@ -585,88 +568,6 @@ static byte ignore_key_list[] = {
 	VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN,
 	VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU, 0
 };
-
-#else
-/*
-* Hack -- initialization list for "special_key"
-*
-* We ignore the modifier keys (shift, control, alt, num lock, scroll lock),
-* and the normal keys (escape, tab, return, letters, numbers, etc), but we
-* catch the keypad keys (with and without numlock set, including keypad 5),
-* the function keys (including the "menu" key which maps to F10), and the
-* "pause" key (between scroll lock and numlock).  We also catch a few odd
-* keys which I do not recognize, but which are listed among keys which we
-* do catch, so they should be harmless to catch.
-*/
-static byte special_key_list[] =
-{
-	VK_CLEAR, 		/* 0x0C (KP<5>) */
-
-	VK_PAUSE, 		/* 0x13 (pause) */
-
-	VK_PRIOR, 		/* 0x21 (KP<9>) */
-	VK_NEXT, 		/* 0x22 (KP<3>) */
-	VK_END, 			/* 0x23 (KP<1>) */
-	VK_HOME, 		/* 0x24 (KP<7>) */
-	VK_LEFT, 		/* 0x25 (KP<4>) */
-	VK_UP, 			/* 0x26 (KP<8>) */
-	VK_RIGHT, 		/* 0x27 (KP<6>) */
-	VK_DOWN, 		/* 0x28 (KP<2>) */
-	VK_SELECT, 		/* 0x29 (?????) */
-	VK_PRINT, 		/* 0x2A (?????) */
-	VK_EXECUTE, 		/* 0x2B (?????) */
-	VK_SNAPSHOT, 	/* 0x2C (?????) */
-	VK_INSERT, 		/* 0x2D (KP<0>) */
-	VK_DELETE, 		/* 0x2E (KP<.>) */
-	VK_HELP, 		/* 0x2F (?????) */
-
-#if 0
-	VK_NUMPAD0, 		/* 0x60 (KP<0>) */
-	VK_NUMPAD1, 		/* 0x61 (KP<1>) */
-	VK_NUMPAD2, 		/* 0x62 (KP<2>) */
-	VK_NUMPAD3, 		/* 0x63 (KP<3>) */
-	VK_NUMPAD4, 		/* 0x64 (KP<4>) */
-	VK_NUMPAD5, 		/* 0x65 (KP<5>) */
-	VK_NUMPAD6, 		/* 0x66 (KP<6>) */
-	VK_NUMPAD7, 		/* 0x67 (KP<7>) */
-	VK_NUMPAD8, 		/* 0x68 (KP<8>) */
-	VK_NUMPAD9, 		/* 0x69 (KP<9>) */
-	VK_MULTIPLY, 	/* 0x6A (KP<*>) */
-	VK_ADD, 			/* 0x6B (KP<+>) */
-	VK_SEPARATOR, 	/* 0x6C (?????) */
-	VK_SUBTRACT, 	/* 0x6D (KP<->) */
-	VK_DECIMAL, 		/* 0x6E (KP<.>) */
-	VK_DIVIDE, 		/* 0x6F (KP</>) */
-#endif
-
-	VK_F1, 			/* 0x70 */
-	VK_F2, 			/* 0x71 */
-	VK_F3, 			/* 0x72 */
-	VK_F4, 			/* 0x73 */
-	VK_F5, 			/* 0x74 */
-	VK_F6, 			/* 0x75 */
-	VK_F7, 			/* 0x76 */
-	VK_F8, 			/* 0x77 */
-	VK_F9, 			/* 0x78 */
-	VK_F10, 			/* 0x79 */
-	VK_F11, 			/* 0x7A */
-	VK_F12, 			/* 0x7B */
-	VK_F13, 			/* 0x7C */
-	VK_F14, 			/* 0x7D */
-	VK_F15, 			/* 0x7E */
-	VK_F16, 			/* 0x7F */
-	VK_F17, 			/* 0x80 */
-	VK_F18, 			/* 0x81 */
-	VK_F19, 			/* 0x82 */
-	VK_F20, 			/* 0x83 */
-	VK_F21, 			/* 0x84 */
-	VK_F22, 			/* 0x85 */
-	VK_F23, 			/* 0x86 */
-	VK_F24, 			/* 0x87 */
-
-	0
-};
-#endif
 
 
 /*
@@ -735,7 +636,7 @@ static char *analyze_font(char *path, int *wp, int *hp)
 /*
  * Check for existance of a file
  */
-static bool check_file(cptr s)
+static bool_ check_file(cptr s)
 {
 	char path[1024];
 
@@ -784,7 +685,7 @@ static bool check_file(cptr s)
 /*
  * Check for existance of a directory
  */
-static bool check_dir(cptr s)
+static bool_ check_dir(cptr s)
 {
 	int i;
 
@@ -1004,12 +905,6 @@ static void save_prefs(void)
 	strcpy(buf, arg_sound ? "1" : "0");
 	WritePrivateProfileString("Angband", "Sound", buf, ini_file);
 
-#ifdef SUPPORT_GAMMA
-	/* Save the "gamma_val" */
-	sprintf(buf, "%d", gamma_val);
-	WritePrivateProfileString("Angband", "GammaVal", buf, ini_file);
-#endif /* SUPPORT_GAMMA */
-
 	/* Save window prefs */
 	for (i = 0; i < MAX_TERM_DATA; ++i)
 	{
@@ -1075,11 +970,6 @@ static void load_prefs(void)
 
 	/* Extract the "arg_sound" flag */
 	arg_sound = (GetPrivateProfileInt("Angband", "Sound", 0, ini_file) != 0);
-
-#ifdef SUPPORT_GAMMA
-	/* Extract the "gamma_val" */
-	gamma_val = GetPrivateProfileInt("Angband", "GammaVal", 0, ini_file);
-#endif /* SUPPORT_GAMMA */
 
 	/* Load window prefs */
 	for (i = 0; i < MAX_TERM_DATA; ++i)
@@ -1236,7 +1126,7 @@ static int new_palette(void)
 /*
  * Initialize graphics
  */
-static bool init_graphics()
+static bool_ init_graphics()
 {
 	/* Initialize once */
 	/*if (can_use_graphics != arg_graphics) */
@@ -1245,16 +1135,12 @@ static bool init_graphics()
 		int wid, hgt;
 		cptr name;
 
-#ifdef USE_TRANSPARENCY
-
 		/* Unused */
 		PALETTEENTRY entry =
 		        {
 		                0, 0, 0, 0
 		        };
 		(void)entry;
-
-#endif /* USE_TRANSPARENCY */
 
 		if (arg_graphics == 2)
 		{
@@ -1289,8 +1175,6 @@ static bool init_graphics()
 		infGraph.CellHeight = hgt;
 
 
-#ifdef USE_TRANSPARENCY
-
 		path_build(buf, 1024, ANGBAND_DIR_XTRA_GRAF, "mask.bmp");
 		/* Load the bitmap or quit */
 		if (!ReadDIB(data[0].w, buf, &infMask))
@@ -1298,8 +1182,6 @@ static bool init_graphics()
 			plog_fmt("Cannot read bitmap file '%s'", name);
 			return (FALSE);
 		}
-
-#endif /* USE_TRANSPARENCY */
 
 		/* Activate a palette */
 		if (!new_palette())
@@ -1323,7 +1205,7 @@ static bool init_graphics()
 /*
  * Initialize sound
  */
-static bool init_sound()
+static bool_ init_sound()
 {
 	/* Initialize once */
 	if (!can_use_sound)
@@ -1401,7 +1283,7 @@ static errr term_force_font(term_data *td, cptr path)
 	/* Forget old font */
 	if (td->font_file)
 	{
-		bool used = FALSE;
+		bool_ used = FALSE;
 
 		/* Scan windows */
 		for (i = 0; i < MAX_TERM_DATA; i++)
@@ -1562,28 +1444,6 @@ static void term_data_redraw(term_data *td)
 /*** Function hooks needed by "Term" ***/
 
 
-#if 0
-
-/*
- * Initialize a new Term
- */
-static void Term_init_win(term *t)
-{
-	/* XXX Unused */
-}
-
-
-/*
- * Nuke an old Term
- */
-static void Term_nuke_win(term *t)
-{
-	/* XXX Unused */
-}
-
-#endif
-
-
 /*
  * Interact with the User
  */
@@ -1592,16 +1452,6 @@ static errr Term_user_win(int n)
 	/* Success */
 	return (0);
 }
-
-
-#ifdef SUPPORT_GAMMA
-
-/*
- * When set to TRUE, indicates that we can use gamma_table
- */
-static bool gamma_table_ready = FALSE;
-
-#endif /* SUPPORT_GAMMA */
 
 
 /*
@@ -1630,34 +1480,7 @@ static errr Term_xtra_win_react(void)
 
 		byte rv, gv, bv;
 
-		bool change = FALSE;
-
-#ifdef SUPPORT_GAMMA
-
-		static u16b old_gamma_val = 0;
-
-
-		/* React to change in the gamma value */
-		if (gamma_val != old_gamma_val)
-		{
-			/* Temporarily inactivate the gamma table */
-			gamma_table_ready = FALSE;
-
-			/* Only need to build the table if gamma exists */
-			if (gamma_val)
-			{
-				/* Rebuild the table */
-				build_gamma_table(gamma_val);
-
-				/* Activate the table */
-				gamma_table_ready = TRUE;
-			}
-
-			/* Remember the gamma value used */
-			old_gamma_val = gamma_val;
-		}
-
-#endif /* SUPPORT_GAMMA */
+		bool_ change = FALSE;
 
 		/* Save the default colors */
 		for (i = 0; i < 256; i++)
@@ -1666,18 +1489,6 @@ static errr Term_xtra_win_react(void)
 			rv = angband_color_table[i][1];
 			gv = angband_color_table[i][2];
 			bv = angband_color_table[i][3];
-
-#ifdef SUPPORT_GAMMA
-
-			/* Hack - Gamma correction */
-			if (gamma_table_ready)
-			{
-				rv = gamma_table[rv];
-				gv = gamma_table[gv];
-				bv = gamma_table[bv];
-			}
-
-#endif /* SUPPORT_GAMMA */
 
 			/* Extract a full color code */
 			code = PALETTERGB(rv, gv, bv);
@@ -1796,8 +1607,6 @@ static errr Term_xtra_win_event(int v)
 	/* Check for an event */
 	else
 	{
-		irc_poll();
-
 		/* Check */
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
@@ -2002,8 +1811,6 @@ static errr Term_xtra_win(int n, int v)
 		/* Delay for some milliseconds */
 	case TERM_XTRA_DELAY:
 		{
-			irc_poll();
-
 			return (Term_xtra_win_delay(v));
 		}
 
@@ -2216,15 +2023,7 @@ static errr Term_text_win(int x, int y, int n, byte a, const char *s)
  *
  * If "graphics" is not available, we simply "wipe" the given grids.
  */
-# ifdef USE_TRANSPARENCY
-# ifdef USE_EGO_GRAPHICS
 static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp, const byte *tap, const char *tcp, const byte *eap, const char *ecp)
-# else /* USE_EGO_GRAPHICS */
-static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp, const byte *tap, const char *tcp)
-# endif  /* USE_EGO_GRAPHICS */
-# else /* USE_TRANSPARENCY */
-static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
-# endif  /* USE_TRANSPARENCY */
 {
 	term_data *td = (term_data*)(Term->data);
 
@@ -2234,19 +2033,11 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 	int x1, y1, w1, h1;
 	int x2, y2, w2, h2, tw2;
 
-# ifdef USE_TRANSPARENCY
-
 	int x3, y3;
 
 	HDC hdcMask = NULL;
 
-#ifdef USE_EGO_GRAPHICS
-
 	int x4, y4;
-
-#endif
-
-# endif  /* USE_TRANSPARENCY */
 
 	HDC hdc;
 	HDC hdcSrc;
@@ -2282,15 +2073,11 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 	hdcSrc = CreateCompatibleDC(hdc);
 	hbmSrcOld = SelectObject(hdcSrc, infGraph.hBitmap);
 
-# ifdef USE_TRANSPARENCY
-
 	if (arg_graphics == 2)
 	{
 		hdcMask = CreateCompatibleDC(hdc);
 		SelectObject(hdcMask, infMask.hBitmap);
 	}
-
-# endif  /* USE_TRANSPARENCY */
 
 	/* Draw attr/char pairs */
 	for (i = 0; i < n; i++, x2 += w2)
@@ -2305,8 +2092,6 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 		/* Location of bitmap cell */
 		x1 = col * w1;
 		y1 = row * h1;
-
-# ifdef USE_TRANSPARENCY
 
 		if (arg_graphics == 2)
 		{
@@ -2325,7 +2110,6 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 				/* Draw the tile */
 				BitBlt(hdc, x2, y2, tw2, h2, hdcSrc, x1, y1, SRCPAINT);
 
-#ifdef USE_EGO_GRAPHICS
 				if (ecp[i] != 0 && eap[i] != 0)
 				{
 					x4 = (ecp[i] & 0x7F) * w1;
@@ -2337,7 +2121,6 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 					/* Draw the tile */
 					BitBlt(hdc, x2, y2, tw2, h2, hdcSrc, x4, y4, SRCPAINT);
 				}
-#endif
 			}
 
 			/* Need to stretch */
@@ -2359,7 +2142,6 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 					StretchBlt(hdc, x2, y2, tw2, h2, hdcSrc, x1, y1, w1, h1, SRCPAINT);
 				}
 
-#ifdef USE_EGO_GRAPHICS
 				if (ecp[i] != 0 && eap[i] != 0)
 				{
 					x4 = (ecp[i] & 0x7F) * w1;
@@ -2371,13 +2153,9 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 					/* Draw the tile */
 					StretchBlt(hdc, x2, y2, tw2, h2, hdcSrc, x4, y4, w1, h1, SRCPAINT);
 				}
-#endif
 			}
 		}
 		else
-
-# endif  /* USE_TRANSPARENCY */
-
 		{
 			/* Perfect size */
 			if ((w1 == tw2) && (h1 == h2))
@@ -2402,16 +2180,12 @@ static errr Term_pict_win(int x, int y, int n, const byte *ap, const char *cp)
 	SelectObject(hdcSrc, hbmSrcOld);
 	DeleteDC(hdcSrc);
 
-# ifdef USE_TRANSPARENCY
-
 	if (arg_graphics == 2)
 	{
 		/* Release */
 		SelectObject(hdcMask, hbmSrcOld);
 		DeleteDC(hdcMask);
 	}
-
-# endif  /* USE_TRANSPARENCY */
 
 	/* Release */
 	ReleaseDC(td->w, hdc);
@@ -2450,12 +2224,6 @@ static void term_data_link(term_data *td)
 	/* Erase with "white space" */
 	t->attr_blank = TERM_WHITE;
 	t->char_blank = ' ';
-
-#if 0
-	/* Prepare the init/nuke hooks */
-	t->init_hook = Term_init_win;
-	t->nuke_hook = Term_nuke_win;
-#endif
 
 	/* Prepare the template hooks */
 	t->user_hook = Term_user_win;
@@ -2665,13 +2433,8 @@ static void setup_menus(void)
 	               MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
 	EnableMenuItem(hm, IDM_FILE_SAVE,
 	               MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
-#ifdef ALLOW_QUITTING
-	EnableMenuItem(hm, IDM_FILE_ABORT,
-	               MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
-#else
 	EnableMenuItem(hm, IDM_FILE_SCORE,
 	               MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
-#endif /* ALLOW_QUITTING */
 	EnableMenuItem(hm, IDM_FILE_EXIT,
 	               MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
 
@@ -2695,22 +2458,12 @@ static void setup_menus(void)
 		               MF_BYCOMMAND | MF_ENABLED);
 	}
 
-#ifdef ALLOW_QUITTING
-
-	/* Menu "File", Item "Abort" */
-	EnableMenuItem(hm, IDM_FILE_ABORT,
-	               MF_BYCOMMAND | MF_ENABLED);
-
-#else
-
 	/* Menu "File", Item "Score" */
 	if (initialized && character_generated && !character_icky)
 	{
 		EnableMenuItem(hm, IDM_FILE_SCORE,
 		               MF_BYCOMMAND | MF_ENABLED);
 	}
-
-#endif
 
 	/* Menu "File", Item "Exit" */
 	EnableMenuItem(hm, IDM_FILE_EXIT,
@@ -3032,101 +2785,14 @@ ofn.lStructSize = sizeof(OPENFILENAME);
 			break;
 		}
 
-#ifdef ALLOW_QUITTING
-
-		/* Abort */
-	case IDM_FILE_ABORT:
-		{
-			if (game_in_progress && character_generated)
-			{
-				/* XXX XXX XXX */
-				if (MessageBox(data[0].w,
-				                "Your character will be not saved!", "Warning",
-				                MB_ICONEXCLAMATION | MB_OKCANCEL) == IDCANCEL)
-				{
-					break;
-				}
-			}
-			quit(NULL);
-			break;
-		}
-
-#else
-
 		/* Score */
 	case IDM_FILE_SCORE:
 		{
-			char buf[1024];
-
-			/* Paranoia */
-			if (!initialized || character_icky ||
-			                !game_in_progress || !character_generated)
-			{
-				/* Can't happen but just in case */
-				plog("You may not do that right now.");
-
-				break;
-			}
-
-			/* Build the pathname of the score file */
-			path_build(buf, sizeof(buf), ANGBAND_DIR_APEX, "scores.raw");
-
-			/* Hack - open the score file for reading */
-			highscore_fd = fd_open(buf, O_RDONLY);
-
-			/* Paranoia - No score file */
-			if (highscore_fd < 0)
-			{
-				msg_print("Score file is not available.");
-
-				break;
-			}
-
-			/* Mega-Hack - prevent various functions XXX XXX XXX */
-			initialized = FALSE;
-
-			/* Save screen */
-			screen_save();
-
-			/* Clear screen */
-			Term_clear();
-
-			/* Prepare scores */
-			if (game_in_progress && character_generated)
-			{
-				predict_score();
-			}
-
-#if 0 /* I don't like this - pelpel */
-
-			/* Mega-Hack - No current player XXX XXX XXX XXX */
-			else
-			{
-				display_scores_aux(0, MAX_HISCORES, -1, NULL);
-			}
-
-#endif
-
-			/* Close the high score file */
-			(void)fd_close(highscore_fd);
-
-			/* Forget the fd */
-			highscore_fd = -1;
-
-			/* Restore screen */
-			screen_load();
-
-			/* Hack - Flush it */
-			Term_fresh();
-
-			/* Mega-Hack - We are ready again */
-			initialized = TRUE;
+			predict_score_gui(&initialized, &game_in_progress);
 
 			/* Done */
 			break;
 		}
-
-#endif
 
 	case IDM_WINDOW_VIS_0:
 		{
@@ -3594,9 +3260,9 @@ LRESULT FAR PASCAL AngbandWndProc(HWND hWnd, UINT uMsg,
 			/* Unused */
 			/* BYTE KeyState = 0x00; */
 
-			bool mc = FALSE;
-			bool ms = FALSE;
-			bool ma = FALSE;
+			bool_ mc = FALSE;
+			bool_ ms = FALSE;
+			bool_ ma = FALSE;
 
 			/* Extract the modifiers */
 			if (GetKeyState(VK_CONTROL) & 0x8000) mc = TRUE;
@@ -3906,9 +3572,9 @@ LRESULT FAR PASCAL AngbandListProc(HWND hWnd, UINT uMsg,
 			/* Unused */
 			/* BYTE KeyState = 0x00; */
 
-			bool mc = FALSE;
-			bool ms = FALSE;
-			bool ma = FALSE;
+			bool_ mc = FALSE;
+			bool_ ms = FALSE;
+			bool_ ma = FALSE;
 
 			/* Extract the modifiers */
 			if (GetKeyState(VK_CONTROL) & 0x8000) mc = TRUE;
@@ -4031,15 +3697,6 @@ WPARAM wParam, LPARAM lParam)
 			SetCursor(NULL);
 			return 0;
 		}
-
-#if 0
-	case WM_ACTIVATE:
-		{
-			if (LOWORD(wParam) == WA_INACTIVE) break;
-
-			/* else fall through */
-		}
-#endif
 
 	case WM_LBUTTONDOWN:
 	case WM_MBUTTONDOWN:
@@ -4253,8 +3910,6 @@ static void init_stuff(void)
 
 	/*** Validate the paths to ensure we have a working install ***/
 
-	validate_dir(ANGBAND_DIR_APEX);
-	validate_dir(ANGBAND_DIR_BONE);
 	validate_dir(ANGBAND_DIR_DATA);
 	validate_dir(ANGBAND_DIR_EDIT);
 	validate_dir(ANGBAND_DIR_FILE);

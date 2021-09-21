@@ -12,6 +12,7 @@
 
 #include "angband.h"
 
+#include "messages.h"
 
 /*
  * Converts stat num into a six-char (right justified) string
@@ -146,7 +147,7 @@ static void prt_piety(void)
 
 	c_put_str(TERM_L_WHITE, "Pt ", ROW_PIETY, COL_PIETY);
 
-	sprintf(tmp, "%9ld", p_ptr->grace);
+	sprintf(tmp, "%9ld", (long) p_ptr->grace);
 
 	c_put_str((p_ptr->praying) ? TERM_L_BLUE : TERM_GREEN, tmp, ROW_PIETY,
 		COL_PIETY + 3);
@@ -249,7 +250,7 @@ static void prt_title(void)
 	/* Mimic shape */
 	if (p_ptr->mimic_form)
 	{
-		call_lua("get_mimic_info", "(d,s)", "s", p_ptr->mimic_form, "show_name", &p);
+		p = get_mimic_name(p_ptr->mimic_form);
 	}
 
 	/* Wizard */
@@ -429,7 +430,6 @@ static void prt_mh(void)
 	byte color;
 
 	object_type *o_ptr;
-	monster_race *r_ptr;
 
 	/* Get the carried monster */
 	o_ptr = &p_ptr->inventory[INVEN_CARRY];
@@ -439,8 +439,6 @@ static void prt_mh(void)
 		put_str("             ", ROW_MH, COL_MH);
 		return;
 	}
-
-	r_ptr = &r_info[o_ptr->pval];
 
 	put_str("MH ", ROW_MH, COL_MH);
 
@@ -935,9 +933,6 @@ static void prt_stun(void)
  */
 static void health_redraw(void)
 {
-
-#ifdef DRS_SHOW_HEALTH_BAR
-
 	/* Not tracking */
 	if (!health_who)
 	{
@@ -1012,9 +1007,6 @@ static void health_redraw(void)
 		/* Dump the current "health" (use '*' symbols) */
 		Term_putstr(COL_INFO + 1, ROW_INFO, len, attr, "**********");
 	}
-
-#endif
-
 }
 
 
@@ -1238,67 +1230,6 @@ void fix_message(void)
 
 			/* Clear to end of line */
 			Term_erase(x, y, 255);
-		}
-
-		/* Fresh */
-		Term_fresh();
-
-		/* Restore */
-		Term_activate(old);
-	}
-}
-
-
-/*
- * Hack -- display recent IRC messages in sub-windows
- *
- * XXX XXX XXX Adjust for width and split messages
- */
-void fix_irc_message(void)
-{
-	int j, i, k;
-	int w, h;
-	int x, y;
-
-	/* Scan windows */
-	for (j = 0; j < 8; j++)
-	{
-		term *old = Term;
-
-		/* No window */
-		if (!angband_term[j]) continue;
-
-		/* No relevant flags */
-		if (!(window_flag[j] & (PW_IRC))) continue;
-
-		/* Activate */
-		Term_activate(angband_term[j]);
-
-		/* Get size */
-		Term_get_size(&w, &h);
-
-		Term_clear();
-
-		/* Dump messages */
-		k = 0;
-		for (i = 0; ; i++)
-		{
-			byte type = message_type((s16b)i);
-
-			if (k >= h) break;
-			if (MESSAGE_NONE == type) break;
-			if (MESSAGE_IRC != type) continue;
-
-			/* Dump the message on the appropriate line */
-			display_message(0, (h - 1) - k, strlen(message_str((s16b)i)), message_color((s16b)i), message_str((s16b)i));
-
-			/* Cursor */
-			Term_locate(&x, &y);
-
-			/* Clear to end of line */
-			Term_erase(x, y, 255);
-
-			k++;
 		}
 
 		/* Fresh */
@@ -1580,14 +1511,38 @@ static void calc_spells(void)
 	p_ptr->new_spells = 0;
 }
 
+
+/*
+ * Calculate powers of player given the current set of corruptions.
+ */
+static void calc_powers_corruption()
+{
+	/* Map of corruptions to a power */
+	int i;
+
+	/* Grant powers according to whatever corruptions the player has */
+	for (i = 0; i < CORRUPTIONS_MAX; i++)
+	{
+		if (player_has_corruption(i))
+		{
+			int p = get_corruption_power(i);
+			if (p >= 0)
+			{
+				p_ptr->powers[p] = TRUE;
+			}
+		}
+	}
+}
+
+
 /* Ugly hack */
-bool calc_powers_silent = FALSE;
+bool_ calc_powers_silent = FALSE;
 
 /* Calc the player powers */
 static void calc_powers(void)
 {
 	int i, p = 0;
-	bool *old_powers;
+	bool_ old_powers[POWER_MAX];
 
 	/* Hack -- wait for creation */
 	if (!character_generated) return;
@@ -1595,14 +1550,15 @@ static void calc_powers(void)
 	/* Hack -- handle "xtra" mode */
 	if (character_xtra) return;
 
-	C_MAKE(old_powers, power_max, bool);
-
 	/* Save old powers */
-	for (i = 0; i < power_max; i++) old_powers[i] = p_ptr->powers[i];
+	for (i = 0; i < POWER_MAX; i++) old_powers[i] = p_ptr->powers[i];
 
 	/* Get intrinsincs */
-	for (i = 0; i < POWER_MAX_INIT; i++) p_ptr->powers[i] = p_ptr->powers_mod[i];
-	for (; i < power_max; i++) p_ptr->powers[i] = 0;
+	for (i = 0; i < POWER_MAX; i++) p_ptr->powers[i] = p_ptr->powers_mod[i];
+	for (; i < POWER_MAX; i++) p_ptr->powers[i] = 0;
+
+	/* Calculate powers granted by corruptions */
+	calc_powers_corruption();
 
 	/* Hooked powers */
 	process_hooks(HOOK_CALC_POWERS, "()");
@@ -1631,7 +1587,9 @@ static void calc_powers(void)
 		}
 	}
 	else if (p_ptr->mimic_form)
-		call_lua("calc_mimic_power", "(d)", "", p_ptr->mimic_form);
+	{
+		calc_mimic_power();
+	}
 
 	/* Add in class powers */
 	for (i = 0; i < 4; i++)
@@ -1647,23 +1605,22 @@ static void calc_powers(void)
 	}
 
 	/* Now lets warn the player */
-	for (i = 0; i < power_max; i++)
+	for (i = 0; i < POWER_MAX; i++)
 	{
 		s32b old = old_powers[i];
-		s32b new = p_ptr->powers[i];
+		s32b new_ = p_ptr->powers[i];
 
-		if (new > old)
+		if (new_ > old)
 		{
 			if (!calc_powers_silent) cmsg_print(TERM_GREEN, powers_type[i].gain_text);
 		}
-		else if (new < old)
+		else if (new_ < old)
 		{
 			if (!calc_powers_silent) cmsg_print(TERM_RED, powers_type[i].lose_text);
 		}
 	}
 
 	calc_powers_silent = FALSE;
-	C_FREE(old_powers, power_max, bool);
 }
 
 
@@ -1784,13 +1741,9 @@ static void calc_mana(void)
 	}
 
 	/* Augment mana */
-	if (munchkin_multipliers)
+	if (p_ptr->to_m)
 	{
-		if (p_ptr->to_m) msp += msp * p_ptr->to_m / 5;
-	}
-	else
-	{
-		if (p_ptr->to_m) msp += msp * p_ptr->to_m / 10;
+		msp += msp * p_ptr->to_m / 5;
 	}
 
 	/* Assume player not encumbered by armor */
@@ -1830,6 +1783,9 @@ static void calc_mana(void)
 	{
 		msp = process_hooks_return[0].num;
 	}
+
+	mana_school_calc_mana(&msp);
+	meta_inertia_control_calc_mana(&msp);
 
 	/* Mana can never be negative */
 	if (msp < 0) msp = 0;
@@ -1937,14 +1893,8 @@ void calc_hitpoints(void)
 	if (p_ptr->shero) mhp += 30;
 
 	/* Augment Hitpoint */
-	if (munchkin_multipliers)
-	{
-		mhp += mhp * p_ptr->to_l / 5;
-	}
-	else
-	{
-		mhp += mhp * p_ptr->to_l / 10;
-	}
+	mhp += mhp * p_ptr->to_l / 5;
+
 	if (mhp < 1) mhp = 1;
 
 	if (p_ptr->body_monster)
@@ -2007,6 +1957,18 @@ void calc_hitpoints(void)
 }
 
 
+/*
+ * God hooks for light
+ */
+static void calc_torch_gods()
+{
+	if (p_ptr->pgod == GOD_VARDA)
+	{
+		/* increase lite radius */
+		p_ptr->cur_lite += 1;
+	}
+}
+
 
 /*
  * Extract and set the current "lite radius"
@@ -2056,8 +2018,8 @@ static void calc_torch(void)
 	/* but does glow as an intrinsic.                  */
 	if (p_ptr->cur_lite == 0 && p_ptr->lite) p_ptr->cur_lite = 1;
 
-	/* Hooked powers */
-	process_hooks(HOOK_CALC_LITE, "()");
+	/* gods */
+	calc_torch_gods();
 
 	/* end experimental mods */
 
@@ -2180,16 +2142,11 @@ void calc_body()
 		}
 	}
 
-	/* Do we need more parts ? ;) */
-	for (i = 0; i < BODY_MAX; i++)
-		p_ptr->extra_body_parts[i] = 0;
-	process_hooks(HOOK_BODY_PARTS, "()");
-
 	for (i = 0; i < BODY_MAX; i++)
 	{
 		int b;
 
-		b = bp[i] + cp_ptr->body_parts[i] + p_ptr->extra_body_parts[i];
+		b = bp[i] + cp_ptr->body_parts[i];
 		if (b < 0) b = 0;
 		if (b > max_body_part[i]) b = max_body_part[i];
 
@@ -2307,12 +2264,13 @@ void calc_body_bonus()
 }
 
 
-byte calc_mimic()
-{
-	s32b blow = 0;
-
-	call_lua("calc_mimic", "(d)", "d", p_ptr->mimic_form, &blow);
-	return blow;
+/* Returns the number of extra blows based on abilities. */
+static int get_extra_blows_ability() {
+        /* Count bonus abilities */
+        int num = 0;
+        if (has_ability(AB_MAX_BLOW1)) num++;
+        if (has_ability(AB_MAX_BLOW2)) num++;
+        return num;
 }
 
 /* Returns the blow information based on class */
@@ -2323,8 +2281,7 @@ void analyze_blow(int *num, int *wgt, int *mul)
 	*mul = cp_ptr->blow_mul;
 
 	/* Count bonus abilities */
-	if (has_ability(AB_MAX_BLOW1)) (*num)++;
-	if (has_ability(AB_MAX_BLOW2)) (*num)++;
+        (*num) += get_extra_blows_ability();
 }
 
 /* Are all the weapons wielded of the right type ? */
@@ -2375,14 +2332,11 @@ int get_weaponmastery_skill()
 int get_archery_skill()
 {
 	int i, skill = 0;
-	object_type *o_ptr;
 
 	i = INVEN_BOW - INVEN_WIELD;
 	/* All weapons must be of the same type */
 	while (p_ptr->body_parts[i] == INVEN_BOW)
 	{
-		o_ptr = &p_ptr->inventory[INVEN_WIELD + i];
-
 		if (p_ptr->inventory[INVEN_WIELD + i].tval == TV_BOW)
 		{
 			switch (p_ptr->inventory[INVEN_WIELD + i].sval / 10)
@@ -2415,7 +2369,7 @@ int get_archery_skill()
 }
 
 /* Apply gods */
-void calc_gods()
+static void calc_gods()
 {
 	/* Boost WIS if the player follows Eru */
 	GOD(GOD_ERU)
@@ -2488,6 +2442,155 @@ void calc_gods()
 		if (p_ptr->grace > 15000) p_ptr->stat_add[A_STR] += 1;
 		if (p_ptr->grace > 20000) p_ptr->stat_add[A_STR] += 1;
 	}
+
+	/* Aule provides to-hit/damage bonuses and fire resistance */
+	GOD(GOD_AULE)
+	{
+		if (p_ptr->grace > 0)
+		{
+			int bonus;
+			/* Resist fire*/
+			if (p_ptr->grace > 5000)
+			{
+				p_ptr->resist_fire = TRUE;
+			}
+
+			bonus = p_ptr->grace / 5000;
+			if (bonus > 5)
+			{
+				bonus = 5;
+			}
+
+			p_ptr->to_h = p_ptr->to_h + bonus;
+			p_ptr->dis_to_h = p_ptr->dis_to_h + bonus;
+			p_ptr->to_d = p_ptr->to_d + bonus;
+			p_ptr->dis_to_d = p_ptr->dis_to_d + bonus;
+		}
+	}
+
+	/* Mandos provides nether resistance and, while praying,
+	   nether immunity and prevents teleportation. */
+	GOD(GOD_MANDOS)
+	{
+		p_ptr->resist_neth = TRUE;
+
+		if ((p_ptr->grace > 10000) &&
+		    (p_ptr->praying == TRUE))
+		{
+			p_ptr->resist_continuum = TRUE;
+		}
+
+		if ((p_ptr->grace > 20000) &&
+		    (p_ptr->praying == TRUE))
+		{
+			p_ptr->immune_neth = TRUE;
+		}
+	}
+
+	/* Ulmo provides water breath and, while praying can
+	   provide poison resistance and magic breath. */
+	GOD(GOD_ULMO)
+	{
+		p_ptr->water_breath = TRUE;
+
+		if ((p_ptr->grace > 1000) &&
+		    (p_ptr->praying == TRUE))
+		{
+			p_ptr->resist_pois = TRUE;
+		}
+
+		if ((p_ptr->grace > 15000) &&
+		    (p_ptr->praying == TRUE))
+		{
+			p_ptr->magical_breath = TRUE;
+		}
+	}
+}
+
+/* Apply spell schools */
+static void calc_schools()
+{
+	if (get_skill(SKILL_AIR) >= 50)
+	{
+		p_ptr->magical_breath = TRUE;
+	}
+
+	if (get_skill(SKILL_WATER) >= 30)
+	{
+		p_ptr->water_breath = TRUE;
+	}
+}
+
+/* Apply corruptions */
+static void calc_corruptions()
+{
+	if (player_has_corruption(CORRUPT_BALROG_AURA))
+	{
+		p_ptr->xtra_f3 |= TR3_SH_FIRE;
+		p_ptr->xtra_f3 |= TR3_LITE1;
+	}
+
+	if (player_has_corruption(CORRUPT_BALROG_WINGS))
+	{
+		p_ptr->xtra_f4 |= TR4_FLY;
+		p_ptr->stat_add[A_CHR] -= 4;
+		p_ptr->stat_add[A_DEX] -= 2;
+	}
+
+	if (player_has_corruption(CORRUPT_BALROG_STRENGTH))
+	{
+		p_ptr->stat_add[A_STR] += 3;
+		p_ptr->stat_add[A_CON] += 1;
+		p_ptr->stat_add[A_DEX] -= 3;
+		p_ptr->stat_add[A_CHR] -= 1;
+	}
+
+	if (player_has_corruption(CORRUPT_DEMON_SPIRIT))
+	{
+		p_ptr->stat_add[A_INT] += 1;
+		p_ptr->stat_add[A_CHR] -= 2;
+	}
+
+	if (player_has_corruption(CORRUPT_DEMON_HIDE))
+	{
+		p_ptr->to_a     = p_ptr->to_a     + p_ptr->lev;
+		p_ptr->dis_to_a = p_ptr->dis_to_a + p_ptr->lev;
+		p_ptr->pspeed = p_ptr->pspeed - (p_ptr->lev / 7);
+		if (p_ptr->lev >= 40)
+		{
+			p_ptr->xtra_f2 |= TR2_IM_FIRE;
+		}
+	}
+
+	if (player_has_corruption(CORRUPT_DEMON_REALM))
+	{
+		/* 1500 may seem a lot, but people are rather unlikely to
+		   get the corruption very soon due to the dependencies. */
+		if (s_info[SKILL_DAEMON].mod == 0)
+		{
+			s_info[SKILL_DAEMON].mod = 1500;
+		}
+		s_info[SKILL_DAEMON].hidden = FALSE;
+	}
+
+	if (player_has_corruption(CORRUPT_RANDOM_TELEPORT))
+	{
+		p_ptr->xtra_f3 |= TR3_TELEPORT;
+	}
+
+	if (player_has_corruption(CORRUPT_ANTI_TELEPORT))
+	{
+		if (p_ptr->corrupt_anti_teleport_stopped == FALSE)
+		{
+			p_ptr->resist_continuum = TRUE;
+		}
+	}
+
+	if (player_has_corruption(CORRUPT_TROLL_BLOOD))
+	{
+		p_ptr->xtra_f3 |= (TR3_REGEN | TR3_AGGRAVATE);
+		p_ptr->xtra_esp |= ESP_TROLL;
+	}
 }
 
 /* Apply flags */
@@ -2495,6 +2598,8 @@ static int extra_blows;
 static int extra_shots;
 void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pval, s16b tval, s16b to_h, s16b to_d, s16b to_a)
 {
+        s16b antimagic_mod;
+
 	/* Affect stats */
 	if (f1 & (TR1_STR)) p_ptr->stat_add[A_STR] += pval;
 	if (f1 & (TR1_INT)) p_ptr->stat_add[A_INT] += pval;
@@ -2610,16 +2715,16 @@ void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pva
 
 	if (f4 & (TR4_PRECOGNITION)) p_ptr->precognition = TRUE;
 
+        antimagic_mod = to_h + to_d + to_a;
+
 	if (f4 & (TR4_ANTIMAGIC_50))
 	{
 		s32b tmp;
 
-		tmp = 10 + get_skill_scale(SKILL_ANTIMAGIC, 40)
-		      - to_h - to_d - pval - to_a;
+                tmp = 10 + get_skill_scale(SKILL_ANTIMAGIC, 40) - antimagic_mod;
 		if (tmp > 0) p_ptr->antimagic += tmp;
 
-		tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 4)
-		      - (to_h + to_d + pval + to_a) / 15;
+                tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 4) - antimagic_mod / 15;
 		if (tmp > 0) p_ptr->antimagic_dis += tmp;
 	}
 
@@ -2627,12 +2732,10 @@ void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pva
 	{
 		s32b tmp;
 
-		tmp = 7 + get_skill_scale(SKILL_ANTIMAGIC, 33)
-		      - to_h - to_d - pval - to_a;
+                tmp = 7 + get_skill_scale(SKILL_ANTIMAGIC, 33) - antimagic_mod;
 		if (tmp > 0) p_ptr->antimagic += tmp;
 
-		tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 2)
-		      - (to_h + to_d + pval + to_a) / 15;
+                tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 2) - antimagic_mod / 15;
 		if (tmp > 0) p_ptr->antimagic_dis += tmp;
 	}
 
@@ -2640,8 +2743,7 @@ void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pva
 	{
 		s32b tmp;
 
-		tmp = 5 + get_skill_scale(SKILL_ANTIMAGIC, 15)
-		      - to_h - to_d - pval - to_a;
+                tmp = 5 + get_skill_scale(SKILL_ANTIMAGIC, 15) - antimagic_mod;
 		if (tmp > 0) p_ptr->antimagic += tmp;
 
 		p_ptr->antimagic_dis += 2;
@@ -2651,8 +2753,7 @@ void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pva
 	{
 		s32b tmp;
 
-		tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 9)
-		      - to_h - to_d - pval - to_a;
+                tmp = 1 + get_skill_scale(SKILL_ANTIMAGIC, 9) - antimagic_mod;
 		if (tmp > 0) p_ptr->antimagic += tmp;
 
 		p_ptr->antimagic_dis += 1;
@@ -2702,10 +2803,10 @@ void apply_flags(u32b f1, u32b f2, u32b f3, u32b f4, u32b f5, u32b esp, s16b pva
  * This function induces various "status" messages, unless silent is
  * TRUE.
  */
-void calc_bonuses(bool silent)
+void calc_bonuses(bool_ silent)
 {
+	static bool_ monk_notify_aux = FALSE;
 	int i, j, hold;
-	int old_invis;
 	int old_speed;
 	u32b old_telepathy;
 	int old_see_inv;
@@ -2713,6 +2814,7 @@ void calc_bonuses(bool silent)
 	int old_dis_to_a;
 	object_type *o_ptr;
 	u32b f1, f2, f3, f4, f5, esp;
+	bool_ monk_armour_aux;
 
 
 	/* Save the old speed */
@@ -2725,9 +2827,6 @@ void calc_bonuses(bool silent)
 	/* Save the old armor class */
 	old_dis_ac = p_ptr->dis_ac;
 	old_dis_to_a = p_ptr->dis_to_a;
-
-	/* Save the old invisibility */
-	old_invis = p_ptr->invis;
 
 	/* Clear extra blows/shots */
 	extra_blows = extra_shots = 0;
@@ -2907,8 +3006,11 @@ void calc_bonuses(bool silent)
 		calc_body_bonus();
 	}
 
-	/* Let the scripts do what they need */
-	process_hooks(HOOK_CALC_BONUS, "()");
+	/* Take care of spell schools */
+	calc_schools();
+
+	/* Take care of corruptions */
+	calc_corruptions();
 
 	/* The powers gived by the wielded monster */
 	calc_wield_monster();
@@ -3219,6 +3321,12 @@ void calc_bonuses(bool silent)
 	{
 		p_ptr->to_a += 100;
 		p_ptr->dis_to_a += 100;
+	}
+
+	/* Temporary precognition */
+	if (p_ptr->tim_precognition > 0)
+	{
+		apply_flags(0, 0, 0, TR4_PRECOGNITION, 0, 0, 0, 0, 0, 0, 0);
 	}
 
 	/* Breath */
@@ -3653,7 +3761,7 @@ void calc_bonuses(bool silent)
 	{
 		int plev = get_skill(SKILL_HAND);
 
-		p_ptr->num_blow = 0;
+                p_ptr->num_blow = get_extra_blows_ability();
 
 		if (plev > 9) p_ptr->num_blow++;
 		if (plev > 19) p_ptr->num_blow++;
@@ -4026,9 +4134,6 @@ void calc_bonuses(bool silent)
 		p_ptr->skill_sav = 10;
 	else
 		p_ptr->skill_sav += 10;
-
-	/* Let the scripts do what they need */
-	process_hooks(HOOK_CALC_BONUS_END, "(d)", silent);
 }
 
 
@@ -4446,13 +4551,6 @@ void window_stuff(void)
 	}
 
 	/* Display overhead view */
-	if (p_ptr->window & (PW_IRC))
-	{
-		p_ptr->window &= ~(PW_IRC);
-		fix_irc_message();
-	}
-
-	/* Display overhead view */
 	if (p_ptr->window & (PW_OVERHEAD))
 	{
 		p_ptr->window &= ~(PW_OVERHEAD);
@@ -4491,7 +4589,7 @@ void handle_stuff(void)
 }
 
 
-bool monk_empty_hands(void)
+bool_ monk_empty_hands(void)
 {
 	int i;
 	object_type *o_ptr;
@@ -4511,7 +4609,7 @@ bool monk_empty_hands(void)
 	return TRUE;
 }
 
-bool monk_heavy_armor(void)
+bool_ monk_heavy_armor(void)
 {
 	u16b monk_arm_wgt = 0;
 
@@ -4531,7 +4629,6 @@ bool monk_heavy_armor(void)
 static int get_artifact_idx(int level)
 {
 	int count = 0, i;
-	bool OK = FALSE;
 
 	while (count < 1000)
 	{
@@ -4551,23 +4648,12 @@ static int get_artifact_idx(int level)
 		/* Avoid granting SPECIAL_GENE artifacts */
 		if (a_ptr->flags4 & TR4_SPECIAL_GENE) continue;
 
-		OK = TRUE;
-		break;
+		return i;
 	}
 
 	/* No matches found */
-	if (OK == FALSE)
-	{
-#if 0 /* pelpel */
-		/* XXX XXX XXX Grant the Phial */
-		i = 1;
-#endif /* pelpel */
-
-		/* Grant a randart */
-		i = 0;
-	}
-
-	return i;
+	/* Grant a randart */
+	return 0;
 }
 
 /* Chose a fate */
@@ -4823,6 +4909,7 @@ void dump_fates(FILE *outfile)
 {
 	int i;
 	char buf[120];
+	bool_ pending = FALSE;
 
 	if (!outfile) return;
 
@@ -4833,6 +4920,11 @@ void dump_fates(FILE *outfile)
 			fate_desc(buf, i);
 			fprintf(outfile, "%s\n", buf);
 		}
+		if ((fates[i].fate) && !(fates[i].know)) pending = TRUE;
+	}
+	if (pending)
+	{
+		fprintf(outfile, "You do not know all of your fate.\n");
 	}
 }
 

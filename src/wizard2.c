@@ -56,13 +56,7 @@ void teleport_player_town(int town)
 {
 	int x = 0, y = 0;
 
-	if (autosave_l)
-	{
-		is_autosave = TRUE;
-		msg_print("Autosaving the game...");
-		do_cmd_save_game();
-		is_autosave = FALSE;
-	}
+	autosave_checkpoint();
 
 	/* Change town */
 	dun_level = 0;
@@ -90,24 +84,6 @@ finteletown:
 void do_cmd_rerate(void)
 {
 	int min_value, max_value, i, percent;
-
-#ifdef TEST
-	int fubar, mlk = 0;
-
-	for (fubar = 0; fubar < max_k_idx; fubar++)
-	{
-		if ((k_info[fubar].tval == TV_POTION) || (k_info[fubar].tval == TV_POTION2))
-		{
-			k_info[fubar].x_attr = 0xBC;
-			mlk++;
-		}
-	}
-
-	msg_format ("%d changes made.", mlk);
-
-#else /* TEST */
-
-#endif /* TEST */
 
 	min_value = (PY_MAX_LEVEL * 3 * (p_ptr->hitdie - 1)) / 8;
 	min_value += PY_MAX_LEVEL;
@@ -150,8 +126,6 @@ void do_cmd_rerate(void)
 }
 
 
-#ifdef ALLOW_WIZARD
-
 /*
  * Create the artifact of the specified number -- DAN
  *
@@ -162,7 +136,7 @@ static void wiz_create_named_art()
 	object_type *q_ptr;
 	int i, a_idx;
 	cptr p = "Number of the artifact :";
-	char out_val[80];
+	char out_val[80] = "";
 	artifact_type *a_ptr;
 
 	if (!get_string(p, out_val, 4)) return;
@@ -182,11 +156,6 @@ static void wiz_create_named_art()
 	/* Ignore "empty" artifacts */
 	if (!a_ptr->name) return;
 
-#if 0
-	/* Ignore generated artifacts */
-	if (a_ptr->cur_num) return;
-#endif
-
 	/* Acquire the "kind" index */
 	i = lookup_kind(a_ptr->tval, a_ptr->sval);
 
@@ -199,38 +168,7 @@ static void wiz_create_named_art()
 	/* Save the name */
 	q_ptr->name1 = a_idx;
 
-#if 0 /* Old ugly method */
-	/* Extract the fields */
-	q_ptr->pval = a_ptr->pval;
-	q_ptr->ac = a_ptr->ac;
-	q_ptr->dd = a_ptr->dd;
-	q_ptr->ds = a_ptr->ds;
-	q_ptr->to_a = a_ptr->to_a;
-	q_ptr->to_h = a_ptr->to_h;
-	q_ptr->to_d = a_ptr->to_d;
-	q_ptr->weight = a_ptr->weight;
-
-	/* Hack -- acquire "cursed" flag */
-	if (a_ptr->flags3 & (TR3_CURSED)) q_ptr->ident |= (IDENT_CURSED);
-
-	k_ptr = &k_info[q_ptr->k_idx];
-
-	/* Extract some flags */
-	object_flags(q_ptr, &f1, &f2, &f3, &f4, &f5, &esp);
-
-	/* Hack give a basic exp/exp level to an object that needs it */
-	if (f4 & TR4_LEVELS)
-	{
-		q_ptr->elevel = (k_ptr->level / 10) + 1;
-		q_ptr->exp = player_exp[q_ptr->elevel - 1];
-	}
-
-	random_artifact_resistance(q_ptr);
-
-	a_ptr->cur_num = 1;
-#else
 	apply_magic(q_ptr, -1, TRUE, TRUE, TRUE);
-#endif
 
 	/* Identify it fully */
 	object_aware(q_ptr);
@@ -246,45 +184,6 @@ static void wiz_create_named_art()
 	msg_print("Allocated.");
 }
 
-/*
- * Hack -- quick debugging hook
- */
-void do_cmd_wiz_hack_ben(int num)
-{
-	s32b a;
-
-	/*        MAKE(r_ptr, monster_race);
-	        COPY(r_ptr, &r_info[500], monster_race);
-
-	        r_ptr->level = 1;
-	        r_ptr->flags6 |= RF6_BLINK;
-	        r_ptr->freq_inate = r_ptr->freq_spell = 90;
-
-	        place_monster_one_race = r_ptr;
-	        place_monster_one(p_ptr->py - 1, p_ptr->px, 500, 0, TRUE, MSTATUS_PET);*/
-
-	get_lua_var("a", 'd', &a);
-	msg_format("a: %d", a);
-
-	/* Success */
-	return;
-}
-
-void do_cmd_lua_script()
-{
-	char script[80] = "tome_dofile_anywhere(ANGBAND_DIR_CORE, 'gen_idx.lua')";
-
-	if (!get_string("Script:", script, 80)) return;
-
-	exec_lua(script);
-
-	/* Success */
-	return;
-}
-
-
-#ifdef MONSTER_HORDES
-
 /* Summon a horde of monsters */
 static void do_cmd_summon_horde()
 {
@@ -293,14 +192,12 @@ static void do_cmd_summon_horde()
 
 	while (--attempts)
 	{
-		scatter(&wy, &wx, p_ptr->py, p_ptr->px, 3, 0);
+		scatter(&wy, &wx, p_ptr->py, p_ptr->px, 3);
 		if (cave_naked_bold(wy, wx)) break;
 	}
 
 	(void)alloc_horde(wy, wx);
 }
-
-#endif /* MONSTER_HORDES */
 
 
 /*
@@ -412,6 +309,23 @@ static void do_cmd_wiz_change_aux(void)
 
 	/* Update */
 	check_experience();
+
+
+	/* Default */
+	sprintf(tmp_val, "%ld", (long) (p_ptr->grace));
+
+	/* Query */
+	if (!get_string("Piety: ", tmp_val, 9)) return;
+
+	/* Extract */
+	tmp_long = atol(tmp_val);
+
+	/* Verify */
+	if (tmp_long < 0) tmp_long = 0L;
+
+	/* Save */
+	p_ptr->grace = tmp_long;
+
 
 	/* Default */
 	sprintf(tmp_val, "%d", p_ptr->luck_base);
@@ -785,13 +699,8 @@ static void wiz_tweak_item(object_type *o_ptr)
 	object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &esp);
 
 
-#if 0 /* DG -- A Wizard can do whatever he/she wants */
-	/* Hack -- leave artifacts alone */
-	if (artifact_p(o_ptr) || o_ptr->art_name) return;
-#endif
-
 	p = "Enter new 'pval' setting: ";
-	sprintf(tmp_val, "%ld", o_ptr->pval);
+	sprintf(tmp_val, "%ld", (long int) o_ptr->pval);
 	if (!get_string(p, tmp_val, 5)) return;
 	o_ptr->pval = atoi(tmp_val);
 	wiz_display_item(o_ptr);
@@ -803,7 +712,7 @@ static void wiz_tweak_item(object_type *o_ptr)
 	wiz_display_item(o_ptr);
 
 	p = "Enter new 'pval3' setting: ";
-	sprintf(tmp_val, "%ld", o_ptr->pval3);
+	sprintf(tmp_val, "%ld", (long int) o_ptr->pval3);
 	if (!get_string(p, tmp_val, 5)) return;
 	o_ptr->pval3 = atoi(tmp_val);
 	wiz_display_item(o_ptr);
@@ -845,7 +754,7 @@ static void wiz_tweak_item(object_type *o_ptr)
 	wiz_display_item(o_ptr);
 
 	p = "Enter new 'obj exp' setting: ";
-	sprintf(tmp_val, "%ld", o_ptr->exp);
+	sprintf(tmp_val, "%ld", (long int) o_ptr->exp);
 	if (!get_string(p, tmp_val, 9)) return;
 	wiz_display_item(o_ptr);
 	o_ptr->exp = atoi(tmp_val);
@@ -869,7 +778,7 @@ static void wiz_reroll_item(object_type *o_ptr)
 
 	char ch;
 
-	bool changed = FALSE;
+	bool_ changed = FALSE;
 
 
 	/* Hack -- leave artifacts alone */
@@ -982,7 +891,7 @@ static void wiz_statistics(object_type *o_ptr)
 	char ch;
 	char *quality;
 
-	bool good, great;
+	bool_ good, great;
 
 	object_type forge;
 	object_type	*q_ptr;
@@ -1168,17 +1077,8 @@ static void wiz_statistics(object_type *o_ptr)
  */
 static void wiz_quantity_item(object_type *o_ptr)
 {
-	int tmp_int, tmp_qnt;
-
+	int tmp_int;
 	char tmp_val[100];
-
-
-#if 0 /* DG -- A Wizard can do whatever he/she/it wants */
-	/* Never duplicate artifacts */
-	if (artifact_p(o_ptr) || o_ptr->art_name) return;
-#endif
-
-	tmp_qnt = o_ptr->number;
 
 	/* Default */
 	sprintf(tmp_val, "%d", o_ptr->number);
@@ -1218,7 +1118,7 @@ static void do_cmd_wiz_play(void)
 
 	char ch;
 
-	bool changed;
+	bool_ changed;
 
 	cptr q, s;
 
@@ -1227,17 +1127,8 @@ static void do_cmd_wiz_play(void)
 	s = "You have nothing to play with.";
 	if (!get_item(&item, q, s, (USE_EQUIP | USE_INVEN | USE_FLOOR))) return;
 
-	/* Get the item (in the pack) */
-	if (item >= 0)
-	{
-		o_ptr = &p_ptr->inventory[item];
-	}
-
-	/* Get the item (on the floor) */
-	else
-	{
-		o_ptr = &o_list[0 - item];
-	}
+	/* Get the item */
+	o_ptr = get_object(item);
 
 
 	/* The item was not changed */
@@ -1435,7 +1326,6 @@ static void wiz_create_item_2(void)
 void do_cmd_wiz_cure_all(void)
 {
 	object_type *o_ptr;
-	monster_race *r_ptr;
 
 	/* Remove curses */
 	(void)remove_all_curse();
@@ -1464,7 +1354,6 @@ void do_cmd_wiz_cure_all(void)
 	o_ptr = &p_ptr->inventory[INVEN_CARRY];
 	if (o_ptr->k_idx)
 	{
-		r_ptr = &r_info[o_ptr->pval];
 		o_ptr->pval2 = o_ptr->pval3;
 	}
 
@@ -1527,13 +1416,7 @@ static void do_cmd_wiz_jump(void)
 	/* Accept request */
 	msg_format("You jump to dungeon level %d.", command_arg);
 
-	if (autosave_l)
-	{
-		is_autosave = TRUE;
-		msg_print("Autosaving the game...");
-		do_cmd_save_game();
-		is_autosave = FALSE;
-	}
+	autosave_checkpoint();
 
 	/* Change level */
 	dun_level = command_arg;
@@ -1598,7 +1481,7 @@ static void do_cmd_wiz_summon(int num)
  *
  * XXX XXX XXX This function is rather dangerous
  */
-static void do_cmd_wiz_named(int r_idx, bool slp)
+static void do_cmd_wiz_named(int r_idx, bool_ slp)
 {
 	int i, x, y;
 
@@ -1614,7 +1497,7 @@ static void do_cmd_wiz_named(int r_idx, bool slp)
 		int d = 1;
 
 		/* Pick a location */
-		scatter(&y, &x, p_ptr->py, p_ptr->px, d, 0);
+		scatter(&y, &x, p_ptr->py, p_ptr->px, d);
 
 		/* Require empty grids */
 		if (!cave_empty_bold(y, x)) continue;
@@ -1632,7 +1515,7 @@ static void do_cmd_wiz_named(int r_idx, bool slp)
  *
  * XXX XXX XXX This function is rather dangerous
  */
-void do_cmd_wiz_named_friendly(int r_idx, bool slp)
+void do_cmd_wiz_named_friendly(int r_idx, bool_ slp)
 {
 	int i, x, y;
 
@@ -1649,7 +1532,7 @@ void do_cmd_wiz_named_friendly(int r_idx, bool slp)
 		int d = 1;
 
 		/* Pick a location */
-		scatter(&y, &x, p_ptr->py, p_ptr->px, d, 0);
+		scatter(&y, &x, p_ptr->py, p_ptr->px, d);
 
 		/* Require empty grids */
 		if (!cave_empty_bold(y, x)) continue;
@@ -1693,14 +1576,11 @@ extern void do_cmd_wiz_body(s16b bidx)
 	do_cmd_redraw();
 }
 
-#ifdef ALLOW_SPOILERS
 
 /*
  * External function
  */
 extern void do_cmd_spoilers(void);
-
-#endif /* ALLOW_SPOILERS */
 
 
 
@@ -1735,14 +1615,10 @@ void do_cmd_debug(void)
 		break;
 
 
-#ifdef ALLOW_SPOILERS
-
 		/* Hack -- Generate Spoilers */
 	case '"':
 		do_cmd_spoilers();
 		break;
-
-#endif /* ALLOW_SPOILERS */
 
 	case 'A':
 		status_main();
@@ -1826,10 +1702,8 @@ void do_cmd_debug(void)
 	case 'h':
 		do_cmd_rerate(); break;
 
-#ifdef MONSTER_HORDES
 	case 'H':
 		do_cmd_summon_horde(); break;
-#endif /* MONSTER_HORDES */
 
 		/* Identify */
 	case 'i':
@@ -1858,7 +1732,7 @@ void do_cmd_debug(void)
 
 		/* corruption */
 	case 'M':
-		(void) gain_random_corruption(command_arg);
+		gain_random_corruption();
 		break;
 
 		/* Specific reward */
@@ -1891,20 +1765,15 @@ void do_cmd_debug(void)
 		teleport_player(10);
 		break;
 
-		/* Panic save the game */
-	case 'P':
-		exit_game_panic();
-		break;
-
 		/* get a Quest */
 	case 'q':
 		{
 			/*                        if (quest[command_arg].status == QUEST_STATUS_UNTAKEN)*/
-			if ((command_arg >= 1) && (command_arg < MAX_Q_IDX_INIT) && (command_arg != QUEST_RANDOM))
+			if ((command_arg >= 1) && (command_arg < MAX_Q_IDX) && (command_arg != QUEST_RANDOM))
 			{
 				quest[command_arg].status = QUEST_STATUS_TAKEN;
 				*(quest[command_arg].plot) = command_arg;
-				if (quest[command_arg].type == HOOK_TYPE_C) quest[command_arg].init(command_arg);
+				quest[command_arg].init(command_arg);
 				break;
 			}
 			break;
@@ -1997,11 +1866,6 @@ void do_cmd_debug(void)
 		do_cmd_wiz_zap();
 		break;
 
-		/* Hack -- whatever I desire */
-	case '_':
-		do_cmd_wiz_hack_ben(command_arg);
-		break;
-
 		/* Mimic shape changing */
 	case '*':
 		p_ptr->tim_mimic = 100;
@@ -2042,10 +1906,6 @@ void do_cmd_debug(void)
 		summon_specific(p_ptr->py, p_ptr->px, max_dlv[dungeon_type], command_arg);
 		break;
 
-	case '>':
-		do_cmd_lua_script();
-		break;
-
 		/* Not a Wizard Command */
 	default:
 		if (!process_hooks(HOOK_DEBUG_COMMAND, "(d)", cmd))
@@ -2053,13 +1913,3 @@ void do_cmd_debug(void)
 		break;
 	}
 }
-
-
-#else
-
-#ifdef MACINTOSH
-static int i = 0;
-#endif
-
-#endif
-

@@ -12,6 +12,8 @@
 
 #include "angband.h"
 
+#include "messages.h"
+
 /*
  * How often the autoroller will update the display and pause
  * to check for user interuptions.
@@ -200,7 +202,7 @@ static void save_prev_data(void)
 /*
  * Load the previous data
  */
-static void load_prev_data(bool save)
+static void load_prev_data(bool_ save)
 {
 	int i;
 
@@ -463,12 +465,6 @@ static void get_extra(void)
 {
 	int i, j, min_value, max_value;
 
-#ifdef SHOW_LIFE_RATE
-
-	int percent;
-
-#endif
-
 
 	/* Level one */
 	p_ptr->max_plv = p_ptr->lev = 1;
@@ -521,16 +517,6 @@ static void get_extra(void)
 
 	p_ptr->tactic = 4;
 	p_ptr->movement = 4;
-
-#ifdef SHOW_LIFE_RATE
-
-	percent = (int)(((long)player_hp[PY_MAX_LEVEL - 1] * 200L) /
-	                (p_ptr->hitdie + ((PY_MAX_LEVEL - 1) * p_ptr->hitdie)));
-
-	msg_format("Current Life Rating is %d/100.", percent);
-	msg_print(NULL);
-
-#endif /* SHOW_LIFE_RATE */
 }
 
 
@@ -822,29 +808,15 @@ static void player_wipe(void)
 {
 	int i, j;
 
-	bool *powers;
-	bool *corruptions;
-
 
 	/* Wipe special levels */
 	wipe_saved();
 
-	/* Save the powers & corruptions */
-	powers = p_ptr->powers;
-	corruptions = p_ptr->corruptions;
-
 	/* Hack -- zero the struct */
 	p_ptr = WIPE(p_ptr, player_type);
 
-	/* Restore the powers & corruptions */
-	p_ptr->powers = powers;
-	p_ptr->corruptions = corruptions;
-
 	/* Not dead yet */
 	p_ptr->lives = 0;
-
-	/* Wipe the corruptions */
-	(void)C_WIPE(p_ptr->corruptions, max_corruptions, bool);
 
 	/* Wipe the history */
 	for (i = 0; i < 4; i++)
@@ -872,10 +844,10 @@ static void player_wipe(void)
 	}
 
 	/* Wipe the quests */
-	for (i = 0; i < MAX_Q_IDX_INIT; i++)
+	for (i = 0; i < MAX_Q_IDX; i++)
 	{
 		quest[i].status = QUEST_STATUS_UNTAKEN;
-		for (j = 0; j < 4; j++)
+		for (j = 0; j < sizeof(quest[i].data)/sizeof(quest[i].data[0]); j++)
 		{
 			quest[i].data[j] = 0;
 		}
@@ -975,9 +947,6 @@ static void player_wipe(void)
 	total_winner = 0;
 	has_won = FALSE;
 
-	/* Assume no panic save */
-	panic_save = 0;
-
 	/* Assume no cheating */
 	noscore = 0;
 	wizard = 0;
@@ -1048,13 +1017,19 @@ static void player_wipe(void)
 	p_ptr->loan = p_ptr->loan_time = 0;
 
 	/* Wipe the power list */
-	for (i = 0; i < POWER_MAX_INIT; i++)
+	for (i = 0; i < POWER_MAX; i++)
 	{
 		p_ptr->powers_mod[i] = 0;
 	}
 
 	/* No companions killed */
 	p_ptr->companion_killed = 0;
+
+	/* Inertia control */
+	p_ptr->inertia_controlled_spell = -1;
+
+	/* Automatic stat-gain */
+	p_ptr->last_rewarded_level = 1;
 }
 
 
@@ -1075,17 +1050,6 @@ void outfit_obj(int tv, int sv, int pval, int dd, int ds)
 	if (pval)
 		q_ptr->pval = pval;
 
-	/* Merchants get a chest which is currently empty */
-#if 0 /* DGDGDGDG -- use a skill */
-	if ((tv == TV_CHEST) && (cp_ptr->magic_key == MKEY_TELEKINESIS))
-	{
-		/* Put items into the chest */
-		q_ptr->pval = -5;
-
-		/* Set the number of items in the chest */
-		q_ptr->pval2 = 6;
-	}
-#endif
 	/* These objects are "storebought" */
 	q_ptr->ident |= IDENT_MENTAL;
 	q_ptr->number = damroll(dd, ds);
@@ -1097,6 +1061,35 @@ void outfit_obj(int tv, int sv, int pval, int dd, int ds)
 
 
 /*
+ * Give the player an object.
+ */
+static void player_outfit_object(int qty, int tval, int sval)
+{
+	object_type forge;
+	object_type *q_ptr = &forge;
+	object_prep(q_ptr, lookup_kind(tval, sval));
+	q_ptr->number = qty;
+	object_aware(q_ptr);
+	object_known(q_ptr);
+	(void)inven_carry(q_ptr, FALSE);
+}
+
+
+/*
+ * Give player a spell book.
+ */
+static void player_outfit_spellbook(cptr spell_name)
+{
+	object_type forge;
+	object_type *q_ptr = &forge;
+	object_prep(q_ptr, lookup_kind(TV_BOOK, 255));
+	q_ptr->pval = find_spell(spell_name);
+	q_ptr->ident |= IDENT_MENTAL | IDENT_KNOWN;
+	inven_carry(q_ptr, FALSE);
+}
+
+
+/*
  * Init players with some belongings
  *
  * Having an item makes the player "aware" of its purpose.
@@ -1104,50 +1097,160 @@ void outfit_obj(int tv, int sv, int pval, int dd, int ds)
 static void player_outfit(void)
 {
 	int i;
-
-	object_type forge;
-
-	object_type *q_ptr;
-
+	cptr class_name = spp_ptr->title + c_name;
+	cptr subrace_name = rmp_ptr->title + rmp_name;
 
 	/*
 	 * Get an adventurer guide describing a bit of the
-	 * wilderness(useless for vanilla town)
+	 * wilderness.
 	 */
-	if (!vanilla_town)
 	{
-		/* Get local object */
-		q_ptr = &forge;
-
 		/* Hack -- Give the player an adventurer guide */
-		object_prep(q_ptr, lookup_kind(TV_PARCHMENT, 20));
-		q_ptr->number = 1;
-		object_aware(q_ptr);
-		object_known(q_ptr);
-		(void)inven_carry(q_ptr, FALSE);
+		player_outfit_object(1, TV_PARCHMENT, 20);
+	}
+
+	/*
+	 * Provide spell books
+	 */
+	if (game_module_idx == MODULE_TOME)
+	{
+		if (streq(class_name, "Ranger"))
+		{
+			player_outfit_spellbook("Phase Door");
+		}
+	}
+	if (streq(class_name, "Geomancer"))
+	{
+		player_outfit_spellbook("Geyser");
+	}
+	if (streq(class_name, "Priest(Eru)"))
+	{
+		player_outfit_spellbook("See the Music");
+	}
+	if (streq(class_name, "Priest(Manwe)"))
+	{
+		player_outfit_spellbook("Manwe's Blessing");
+	}
+	if (streq(class_name, "Druid"))
+	{
+		player_outfit_spellbook("Charm Animal");
+	}
+	if (streq(class_name, "Dark-Priest"))
+	{
+		player_outfit_spellbook("Curse");
+	}
+	if (streq(class_name, "Paladin"))
+	{
+		player_outfit_spellbook("Divine Aim");
+	}
+	if (game_module_idx == MODULE_THEME)
+	{
+		/* Priests */
+		if (streq(class_name, "Stonewright"))
+		{
+			player_outfit_spellbook("Firebrand");
+		}
+		if (streq(class_name, "Priest(Varda)"))
+		{
+			player_outfit_spellbook("Light of Valinor");
+		}
+		if (streq(class_name, "Priest(Ulmo)"))
+		{
+			player_outfit_spellbook("Song of Belegaer");
+		}
+		if (streq(class_name, "Priest(Mandos)"))
+		{
+			player_outfit_spellbook("Tears of Luthien");
+		}
+
+		/* Dragons */
+		if (streq(subrace_name, "Red"))
+		{
+			player_outfit_spellbook("Globe of Light");
+		}
+		if (streq(subrace_name, "Black"))
+		{
+			player_outfit_spellbook("Geyser");
+		}
+		if (streq(subrace_name, "Green"))
+		{
+			player_outfit_spellbook("Noxious Cloud");
+		}
+		if (streq(subrace_name, "Blue"))
+		{
+			player_outfit_spellbook("Stone Skin");
+		}
+		if (streq(subrace_name, "White"))
+		{
+			player_outfit_spellbook("Sense Monsters");
+		}
+		if (streq(subrace_name, "Ethereal"))
+		{
+			player_outfit_spellbook("Recharge");
+		}
+
+		/* Demons */
+		if (streq(subrace_name, "(Aewrog)"))
+		{
+			player_outfit_spellbook("Charm");
+		}
+		if (streq(subrace_name, "(Narrog)"))
+		{
+			player_outfit_spellbook("Phase Door");
+		}
+
+		/* Peace-mages */
+		if (streq(class_name, "Peace-mage"))
+		{
+			player_outfit_spellbook("Phase Door");
+		}
+
+		/* Wainriders */
+		if (streq(class_name, "Wainrider"))
+		{
+			player_outfit_spellbook("Curse");
+		}
+	}
+
+	if (streq(class_name, "Mimic"))
+	{
+		object_type forge;
+		object_type *q_ptr = &forge;
+		
+		object_prep(q_ptr, lookup_kind(TV_CLOAK, SV_MIMIC_CLOAK));
+		q_ptr->pval2 = resolve_mimic_name("Mouse");
+		q_ptr->ident |= IDENT_MENTAL | IDENT_KNOWN;
+		inven_carry(q_ptr, FALSE);
+	}
+
+	if (game_module_idx == MODULE_THEME)
+	{
+		/* Give everyone a scroll of WoR. */
+		player_outfit_object(1, TV_SCROLL, SV_SCROLL_WORD_OF_RECALL);
+
+		/* Identify everything in pack. */
+		identify_pack_fully();
+	}
+
+	if (streq(rmp_ptr->title + rmp_name, "Vampire"))
+	{
+		player_gain_corruption(CORRUPT_VAMPIRE_TEETH);
+		player_gain_corruption(CORRUPT_VAMPIRE_STRENGTH);
+		player_gain_corruption(CORRUPT_VAMPIRE_VAMPIRE);
 	}
 
 	process_hooks(HOOK_BIRTH_OBJECTS, "()");
-
-	/* Get local object */
-	q_ptr = &forge;
-
-	/* Get local object */
-	q_ptr = &forge;
+	meta_inertia_control_hook_birth_objects();
 
 	{
 		/* Hack -- Give the player some food */
-		object_prep(q_ptr, lookup_kind(TV_FOOD, SV_FOOD_RATION));
-		q_ptr->number = (byte)rand_range(3, 7);
-		object_aware(q_ptr);
-		object_known(q_ptr);
-		(void)inven_carry(q_ptr, FALSE);
+		int qty = (byte)rand_range(3, 7);
+		player_outfit_object(qty, TV_FOOD, SV_FOOD_RATION);
 	}
 
-	/* Get local object */
-	q_ptr = &forge;
-
 	{
+		object_type forge;
+		object_type *q_ptr = &forge;
 		/* Hack -- Give the player some torches */
 		object_prep(q_ptr, lookup_kind(TV_LITE, SV_LITE_TORCH));
 		q_ptr->number = (byte)rand_range(3, 7);
@@ -1156,9 +1259,6 @@ static void player_outfit(void)
 		object_known(q_ptr);
 		(void)inven_carry(q_ptr, FALSE);
 	}
-
-	/* Get local object */
-	q_ptr = &forge;
 
 	/* Rogues have a better knowledge of traps */
 	if (has_ability(AB_TRAPPING))
@@ -1171,6 +1271,8 @@ static void player_outfit(void)
 		t_info[TRAP_OF_FIRE_BOLT].ident = TRUE;
 
 		/* Hack -- Give the player a some ammo for the traps */
+		object_type forge;
+		object_type *q_ptr = &forge;
 		object_prep(q_ptr, lookup_kind(TV_SHOT, SV_AMMO_NORMAL));
 		q_ptr->number = (byte)rand_range(5, 15);
 		object_aware(q_ptr);
@@ -1252,7 +1354,7 @@ static void gen_random_quests(int n)
 		/* XXX XXX XXX Try until valid choice is found */
 		while (tries)
 		{
-			bool ok;
+			bool_ ok;
 
 			tries--;
 
@@ -1309,7 +1411,10 @@ static void gen_random_quests(int n)
 		/* Arg could not find anything ??? */
 		if (!tries)
 		{
-			if (wizard) message_add(MESSAGE_MSG, format("Could not find quest monster on lvl %d", rl), TERM_RED);
+			if (wizard)
+			{
+				message_add(format("Could not find quest monster on lvl %d", rl), TERM_RED);
+			}
 			q_ptr->type = 0;
 		}
 		else
@@ -1321,9 +1426,11 @@ static void gen_random_quests(int n)
 
 			q_ptr->done = FALSE;
 
-			if (wizard) message_add(MESSAGE_MSG,
-				                        format("Quest for %d on lvl %d",
-				                               q_ptr->r_idx, rl), TERM_RED);
+			if (wizard)
+			{
+				message_add(format("Quest for %d on lvl %d",
+						   q_ptr->r_idx, rl), TERM_RED);
+			}
 		}
 
 		lvl += step;
@@ -1636,13 +1743,11 @@ int dump_gods(int sel, int *choice, int max)
 
 
 /* Ask questions */
-static bool do_quick_start = FALSE;
+static bool_ do_quick_start = FALSE;
 
-static bool player_birth_aux_ask()
+static bool_ player_birth_aux_ask()
 {
 	int i, k, n, v, sel;
-
-	s32b tmp;
 
 	int racem[100], max_racem = 0;
 
@@ -1658,8 +1763,6 @@ static bool player_birth_aux_ask()
 	char inp[200];
 
 	s16b *class_types;
-
-	s32b allow_quest;
 
 	/*** Intro ***/
 
@@ -1799,7 +1902,6 @@ static bool player_birth_aux_ask()
 			/* Extra info */
 			Term_putstr(5, 16, -1, TERM_WHITE,
 			            "Your 'race' determines various intrinsic factors and bonuses.");
-			hack_corruption = FALSE;
 
 			/* Dump races */
 			sel = 0;
@@ -1822,7 +1924,10 @@ static bool player_birth_aux_ask()
 				}
 				k = (islower(c) ? A2I(c) : -1);
 				if ((k >= 0) && (k < n)) break;
-				if (c == '?') exec_lua(format("ingame_help('select_context', 'race', '%s')", race_info[sel].title + rp_name));
+				if (c == '?')
+				{
+					help_race(race_info[sel].title + rp_name);
+				}
 				else if (c == '=')
 				{
 					screen_save();
@@ -1945,7 +2050,10 @@ static bool player_birth_aux_ask()
 						while (!(BIT(racem[k]) & rmp_ptr->choice[racem[k] / 32]));
 						break;
 					}
-					else if (c == '?') exec_lua(format("ingame_help('select_context', 'subrace', '%s')", race_mod_info[racem[sel]].title + rmp_name));
+					else if (c == '?')
+					{
+						help_subrace(race_mod_info[racem[sel]].title + rmp_name);
+					}
 
 					k = (islower(c) ? A2I(c) : -1);
 					if ((k >= 0) && (k < max_racem) &&
@@ -2088,7 +2196,10 @@ static bool player_birth_aux_ask()
 				}
 				k = (islower(c) ? A2I(c) : (D2I(c) + 26));
 				if ((k >= 0) && (k < n)) break;
-				if (c == '?') exec_lua(format("ingame_help('select_context', 'class', '%s')", class_info[class_types[sel]].title + c_name));
+				if (c == '?')
+				{
+					help_class(class_info[class_types[sel]].title + c_name);
+				}
 				else if (c == '=')
 				{
 					screen_save();
@@ -2131,20 +2242,6 @@ static bool player_birth_aux_ask()
 		}
 
 		/* Set class */
-#ifdef RESTRICT_COMBINATIONS
-		if (!(restrictions & BIT(k)))
-		{
-			noscore |= 0x0020;
-			message_add(MESSAGE_MSG, " ", TERM_VIOLET);
-			message_add(MESSAGE_MSG, " ", TERM_VIOLET);
-			message_add(MESSAGE_MSG, " ", TERM_VIOLET);
-			message_add(MESSAGE_MSG, "***************************", TERM_VIOLET);
-			message_add(MESSAGE_MSG, "***************************", TERM_VIOLET);
-			message_add(MESSAGE_MSG, "********* Cheater *********", TERM_VIOLET);
-			message_add(MESSAGE_MSG, "***************************", TERM_VIOLET);
-			message_add(MESSAGE_MSG, "***************************", TERM_VIOLET);
-		}
-#endif
 		p_ptr->pclass = class_types[k];
 
 		/* Choose class spec */
@@ -2181,7 +2278,10 @@ static bool player_birth_aux_ask()
 				}
 				k = (islower(c) ? A2I(c) : (D2I(c) + 26));
 				if ((k >= 0) && (k < n)) break;
-				if (c == '?') exec_lua(format("ingame_help('select_context', 'class', '%s')", class_info[p_ptr->pclass].spec[sel].title + c_name));
+				if (c == '?')
+				{
+					help_class(class_info[p_ptr->pclass].spec[sel].title + c_name);
+				}
 				else if (c == '=')
 				{
 					screen_save();
@@ -2247,16 +2347,17 @@ static bool player_birth_aux_ask()
 	}
 	else
 	{
-		int *choice;
+		int choice[MAX_GODS];
 		int max = 0;
 
-		C_MAKE(choice, max_gods, int);
-
 		/* Get the list of possible gods */
-		for (n = 0; n < max_gods; n++)
+		for (n = 0; n < MAX_GODS; n++)
 		{
-			if ((cp_ptr->gods | spp_ptr->gods) & BIT(n))
+			if (god_enabled(&deity_info[n]) &&
+			    ((cp_ptr->gods | spp_ptr->gods) & BIT(n)))
+			{
 				choice[max++] = n;
+			}
 		}
 
 		if (!max)
@@ -2284,8 +2385,6 @@ static bool player_birth_aux_ask()
 				if (c == 'Q') quit(NULL);
 				if (c == 'S')
 				{
-					C_FREE(choice, max_gods, int);
-
 					return (FALSE);
 				}
 				if (c == '*')
@@ -2299,7 +2398,10 @@ static bool player_birth_aux_ask()
 					k = choice[k];
 					break;
 				}
-				if (c == '?') exec_lua(format("ingame_help('select_context', 'god', '%s')", deity_info[choice[sel]].name));
+				if (c == '?')
+				{
+					help_god(deity_info[choice[sel]].name);
+				}
 				else if (c == '=')
 				{
 					screen_save();
@@ -2339,8 +2441,6 @@ static bool player_birth_aux_ask()
 				}
 				else bell();
 			}
-
-			C_FREE(choice, max_gods, int);
 
 			/* Set god */
 			p_ptr->pgod = k;
@@ -2387,7 +2487,6 @@ static bool player_birth_aux_ask()
 	 * the old one (player_type members), it would be less confusing
 	 * to handle birth-only options in a uniform fashion,the above and
 	 * the following:
-	 * permanent_levels,
 	 * ironman_rooms,
 	 * joke_monsters,
 	 * always_small_level, and
@@ -2395,34 +2494,17 @@ static bool player_birth_aux_ask()
 	 */
 
 
-	/* Set dungeon seed */
-	if (permanent_levels)
-	{
-		seed_dungeon = randint(0x10000000);
-	}
-	else
-	{
-		seed_dungeon = 0;
-	}
-
 	/* Set the recall dungeon accordingly */
-	call_lua("get_module_info", "(s)", "d", "base_dungeon", &tmp);
-	dungeon_type = tmp;
+	dungeon_type = DUNGEON_BASE;
 	p_ptr->recall_dungeon = dungeon_type;
 	max_dlv[dungeon_type] = d_info[dungeon_type].mindepth;
 
 	if (p_ptr->astral)
 	{
-		s32b x, y, astral_dun;
-
-		call_lua("get_module_info", "(s)", "d", "astral_dungeon", &astral_dun);
-		dungeon_type = astral_dun;
-
 		/* Somewhere in the misty mountains */
-		call_lua("get_module_info", "(s)", "d", "astral_wild_x", &x);
-		call_lua("get_module_info", "(s)", "d", "astral_wild_y", &y);
-		p_ptr->wilderness_x = x;
-		p_ptr->wilderness_y = y;
+		dungeon_type = DUNGEON_ASTRAL;
+		p_ptr->wilderness_x = DUNGEON_ASTRAL_WILD_X;
+		p_ptr->wilderness_y = DUNGEON_ASTRAL_WILD_Y;
 	}
 
 	/* Clean up */
@@ -2431,8 +2513,7 @@ static bool player_birth_aux_ask()
 	/*** User enters number of quests ***/
 	/* Heino Vander Sanden and Jimmy De Laet */
 
-	call_lua("get_module_info", "(s)", "d", "rand_quest", &allow_quest);
-	if (!ironman_rooms && !permanent_levels && allow_quest)
+	if (!ironman_rooms)
 	{
 		if (do_quick_start)
 		{
@@ -2497,8 +2578,6 @@ static bool player_birth_aux_ask()
 	p_ptr->inside_quest = 0;
 
 	/* Init the plots */
-	call_lua("get_module_info", "(s)", "d", "C_quest", &allow_quest);
-	if (allow_quest)
 	{
 		plots[PLOT_MAIN] = QUEST_NECRO;
 		quest[plots[PLOT_MAIN]].status = QUEST_STATUS_TAKEN;
@@ -2553,7 +2632,7 @@ static const int birth_stat_costs[(18-10) + 1] =
  *
  * Taken from V 2.9.0
  */
-static bool player_birth_aux_point(void)
+static bool_ player_birth_aux_point(void)
 {
 	int i;
 
@@ -2731,15 +2810,15 @@ static bool player_birth_aux_point(void)
 /*
  * Use the autoroller or not to generate a char
  */
-static bool player_birth_aux_auto()
+static bool_ player_birth_aux_auto()
 {
 	int i, j, m, v;
 
 	int mode = 0;
 
-	bool flag = FALSE;
+	bool_ flag = FALSE;
 
-	bool prev = FALSE;
+	bool_ prev = FALSE;
 
 	char c;
 
@@ -2751,8 +2830,6 @@ static bool player_birth_aux_auto()
 
 	char inp[80];
 
-
-#ifdef ALLOW_AUTOROLLER
 
 	/* Initialize */
 	if (autoroll)
@@ -2854,8 +2931,6 @@ static bool player_birth_aux_auto()
 		}
 	}
 
-#endif /* ALLOW_AUTOROLLER */
-
 	/* Roll */
 	while (TRUE)
 	{
@@ -2903,7 +2978,7 @@ static bool player_birth_aux_auto()
 		/* Auto-roll */
 		while (autoroll)
 		{
-			bool accept = TRUE;
+			bool_ accept = TRUE;
 
 			/* Get a new character */
 			get_stats();
@@ -2948,12 +3023,6 @@ static bool player_birth_aux_auto()
 				/* Make sure they see everything */
 				Term_fresh();
 
-#ifndef USE_FAST_AUTOROLLER
-
-				/* Delay 1/10 second */
-				if (fast_autoroller && flag) Term_xtra(TERM_XTRA_DELAY, 100);
-
-#endif
 				/* Do not wait for a key */
 				inkey_scan = TRUE;
 
@@ -3081,7 +3150,7 @@ static bool player_birth_aux_auto()
  * from continuously rolling up characters, which can be VERY
  * expensive CPU wise.  And it cuts down on player stupidity.
  */
-static bool player_birth_aux()
+static bool_ player_birth_aux()
 {
 	char c;
 
@@ -3256,7 +3325,7 @@ static bool player_birth_aux()
 /*
  * Helper function for validate_bg().
  */
-static void validate_bg_aux(int chart, bool chart_checked[], char *buf)
+static void validate_bg_aux(int chart, bool_ chart_checked[], char *buf)
 {
 	char *s;
 
@@ -3264,10 +3333,10 @@ static void validate_bg_aux(int chart, bool chart_checked[], char *buf)
 
 
 	/* Assume the chart does not exist */
-	bool chart_exists = FALSE;
+	bool_ chart_exists = FALSE;
 
 	/* Assume the chart is not complete */
-	bool chart_complete = FALSE;
+	bool_ chart_complete = FALSE;
 
 	int bg_max = max_bg_idx;
 
@@ -3329,7 +3398,7 @@ static void validate_bg(void)
 {
 	int i, race;
 
-	bool chart_checked[512];
+	bool_ chart_checked[512];
 
 	char buf[1024];
 
@@ -3418,19 +3487,11 @@ void player_birth(void)
 	}
 
 	/* Note player birth in the message recall */
-	message_add(MESSAGE_MSG, " ", TERM_L_BLUE);
-	message_add(MESSAGE_MSG, "  ", TERM_L_BLUE);
-	message_add(MESSAGE_MSG, "====================", TERM_L_BLUE);
-	message_add(MESSAGE_MSG, "  ", TERM_L_BLUE);
-	message_add(MESSAGE_MSG, " ", TERM_L_BLUE);
-
-	/* Verify autoskiller */
-#if 0
-	if (validate_autoskiller(spp_ptr->skill_ideal) < 0)
-	{
-		message_add(MESSAGE_MSG, "WARNING: Bad autoskill chart", TERM_VIOLET);
-	}
-#endif
+	message_add(" ", TERM_L_BLUE);
+	message_add("  ", TERM_L_BLUE);
+	message_add("====================", TERM_L_BLUE);
+	message_add("  ", TERM_L_BLUE);
+	message_add(" ", TERM_L_BLUE);
 
 	/* Hack -- outfit the player */
 	player_outfit();
@@ -3460,7 +3521,7 @@ void player_birth(void)
 			while (TRUE)
 			{
 				int j;
-				bool ok = TRUE;
+				bool_ ok = TRUE;
 
 				lev = rand_range(d_ptr->mindepth, d_ptr->maxdepth - 1);
 
@@ -3475,7 +3536,10 @@ void player_birth(void)
 			}
 			d_ptr->t_level[num] = lev;
 
-			if (wizard) message_add(MESSAGE_MSG, format("Random dungeon town: d_idx:%d, lev:%d", i, lev), TERM_WHITE);
+			if (wizard)
+			{
+				message_add(format("Random dungeon town: d_idx:%d, lev:%d", i, lev), TERM_WHITE);
+			}
 
 			/* Create the town */
 			init_town(d_ptr->t_idx[num], d_ptr->t_level[num]);
@@ -3529,7 +3593,7 @@ void player_birth(void)
 char savefile_module[46][80];
 char savefile_names[46][30];
 char savefile_desc[46][80];
-bool savefile_alive[46];
+bool_ savefile_alive[46];
 int savefile_idx[46];
 
 /*
@@ -3545,24 +3609,14 @@ int load_savefile_names()
 
 
 	/* Build the filename */
-#ifdef SAVEFILE_USE_UID
-	strnfmt(tmp, 50, "user.%d.svg", player_uid);
-#else
 	strcpy(tmp, "global.svg");
-#endif /* SAVEFILE_USE_UID */
 	path_build(buf, 1024, ANGBAND_DIR_SAVE, tmp);
 
 	/* File type is "TEXT" */
 	FILE_TYPE(FILE_TYPE_TEXT);
 
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Read the file */
 	fff = my_fopen(buf, "r");
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	/* Failure */
 	if (!fff) return (0);
@@ -3634,14 +3688,8 @@ int load_savefile_names()
 		/* File type is 'SAVE' */
 		FILE_TYPE(FILE_TYPE_SAVE);
 
-		/* Grab permission */
-		if (savefile_setuid) safe_setuid_grab();
-
 		/* Try to open the savefile */
 		fd = fd_open(savefile, O_RDONLY);
-
-		/* Drop permission */
-		if (savefile_setuid) safe_setuid_drop();
 
 		/* Still existing ? */
 		if (fd >= 0)
@@ -3673,24 +3721,14 @@ void save_savefile_names()
 
 
 	/* Build the filename */
-#ifdef SAVEFILE_USE_UID
-	strnfmt(tmp, 50, "user.%d.svg", player_uid);
-#else
 	strcpy(tmp, "global.svg");
-#endif /* SAVEFILE_USE_UID */
 	path_build(buf, 1024, ANGBAND_DIR_SAVE, tmp);
 
 	/* File type is "TEXT" */
 	FILE_TYPE(FILE_TYPE_TEXT);
 
-	/* Grab permission */
-	if (savefile_setuid) safe_setuid_grab();
-
 	/* Read the file */
 	fff = my_fopen(buf, "w");
-
-	/* Drop permission */
-	if (savefile_setuid) safe_setuid_drop();
 
 	/* Failure */
 	if (!fff) return;
@@ -3763,17 +3801,14 @@ static void dump_savefiles(int sel, int max)
 
 
 /* Asks for new game or load game */
-bool no_begin_screen = FALSE;
+bool_ no_begin_screen = FALSE;
 
-bool begin_screen()
+bool_ begin_screen()
 {
 	int m, k, sel, max;
 
 savefile_try_again:
 	sel = 0;
-
-	/* Hack */
-	use_color = TRUE;
 
 	/* Grab the savefiles */
 	max = load_savefile_names();
@@ -3783,7 +3818,7 @@ savefile_try_again:
 	{
 		s32b can_use;
 
-		call_lua("module_savefile_loadable", "(s)", "d", savefile_module[k], &can_use);
+		can_use = module_savefile_loadable(savefile_module[k]);
 		if (can_use)
 		{
 			savefile_idx[m++] = k;
@@ -3852,14 +3887,8 @@ savefile_try_again:
 			strncpy(player_base, savefile_names[savefile_idx[sel - 2]], 32);
 			process_player_name(TRUE);
 
-			/* Grab permission */
-			if (savefile_setuid) safe_setuid_grab();
-
 			/* Remove the savefile */
 			fd_kill(savefile);
-
-			/* Drop permission */
-			if (savefile_setuid) safe_setuid_drop();
 
 			/* Restore 'player_base' and 'savefile' */
 			strncpy(player_base, player_base_save, 32);

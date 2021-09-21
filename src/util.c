@@ -5,6 +5,8 @@
 
 #include "angband.h"
 
+#include "messages.h"
+#include "quark.h"
 
 
 
@@ -122,11 +124,6 @@ void user_name(char *buf, int id)
 		(void)strcpy(buf, pw->pw_name);
 		buf[16] = '\0';
 
-#ifdef CAPITALIZE_USER_NAME
-		/* Hack -- capitalize the user name */
-		if (islower(buf[0])) buf[0] = toupper(buf[0]);
-#endif /* CAPITALIZE_USER_NAME */
-
 		return;
 	}
 #endif /* SET_UID */
@@ -170,31 +167,18 @@ void user_name(char *buf, int id)
 */
 
 
-#ifdef ACORN
-
-
-/*
-* Most of the "file" routines for "ACORN" should be in "main-acn.c"
-*/
-
-
-#else /* ACORN */
-
-
 #ifdef SET_UID
 
 /*
 * Extract a "parsed" path from an initial filename
 * Normally, we simply copy the filename into the buffer
 * But leading tilde symbols must be handled in a special way
-* Replace "~user/" by the home directory of the user named "user"
 * Replace "~/" by the home directory of the current user
 */
 errr path_parse(char *buf, int max, cptr file)
 {
 	cptr	u, s;
 	struct passwd	*pw;
-	char	user[128];
 
 
 	/* Assume no result */
@@ -216,9 +200,6 @@ errr path_parse(char *buf, int max, cptr file)
 	/* Look for non-user portion of the file */
 	s = strstr(u, PATH_SEP);
 
-	/* Hack -- no long user names */
-	if (s && (s >= u + sizeof(user))) return (1);
-
 #ifdef GETLOGIN_BROKEN
 	/* Ask the environment for the home directory */
 	u = getenv("HOME");
@@ -227,21 +208,8 @@ errr path_parse(char *buf, int max, cptr file)
 
 	(void)strcpy(buf, u);
 #else
-	/* Extract a user name */
-	if (s)
-	{
-		int i;
-		for (i = 0; u < s; ++i) user[i] = *u++;
-		user[i] = '\0';
-		u = user;
-	}
-
-	/* Look up the "current" user */
-	if (u[0] == '\0') u = getlogin();
-
-	/* Look up a user (or "current" user) */
-	if (u) pw = getpwnam(u);
-	else pw = getpwuid(getuid());
+	/* Look up password data for user */
+	pw = getpwuid(getuid());
 
 	/* Nothing found? */
 	if (!pw) return (1);
@@ -416,110 +384,6 @@ errr my_fclose(FILE *fff)
 }
 
 
-#endif /* ACORN */
-
-
-/*
-* Like "fgets()" but for strings
-*
-* Process tabs, strip internal non-printables
-*/
-errr my_str_fgets(cptr full_text, char *buf, huge n)
-{
-	static huge last_read = 0;
-	static huge full_size;
-	huge i = 0;
-
-	char *s;
-
-	char tmp[1024];
-
-	/* Initialize */
-	if (!buf)
-	{
-		last_read = 0;
-		full_size = strlen(full_text);
-		return 0;
-	}
-
-	/* The end!  */
-	if (last_read >= full_size)
-	{
-		return 1;
-	}
-
-	while (last_read < full_size)
-	{
-		char c = full_text[last_read++];
-
-		tmp[i++] = c;
-
-		/* Dont overflow */
-		if (i >= 1024)
-		{
-			/* Nothing */
-			buf[0] = '\0';
-
-			/* Failure */
-			return (1);
-		}
-
-		if ((c == '\n') || (c == '\r'))
-		{
-			break;
-		}
-	}
-
-	tmp[i++] = '\n';
-	tmp[i++] = '\0';
-
-	/* We need it again */
-	i = 0;
-
-	/* Convert weirdness */
-	for (s = tmp; *s; s++)
-	{
-		/* Handle newline */
-		if (*s == '\n')
-		{
-			/* Terminate */
-			buf[i] = '\0';
-
-			/* Success */
-			return (0);
-		}
-
-		/* Handle tabs */
-		else if (*s == '\t')
-		{
-			/* Hack -- require room */
-			if (i + 8 >= n) break;
-
-			/* Append a space */
-			buf[i++] = ' ';
-
-			/* Append some more spaces */
-			while (!(i % 8)) buf[i++] = ' ';
-		}
-
-		/* Handle printables */
-		else if (isprint(*s))
-		{
-			/* Copy */
-			buf[i++] = *s;
-
-			/* Check length */
-			if (i >= n) break;
-		}
-	}
-
-	/* Nothing */
-	buf[0] = '\0';
-
-	/* Failure */
-	return (1);
-}
-
 /*
 * Hack -- replacement for "fgets()"
 *
@@ -617,32 +481,6 @@ errr my_fputs(FILE *fff, cptr buf, huge n)
 }
 
 
-#ifdef ACORN
-
-
-/*
-* Most of the "file" routines for "ACORN" should be in "main-acn.c"
-*
-* Many of them can be rewritten now that only "fd_open()" and "fd_make()"
-* and "my_fopen()" should ever create files.
-*/
-
-
-#else /* ACORN */
-
-
-/*
-* Code Warrior is a little weird about some functions
-*/
-#ifdef BEN_HACK
-extern int open(const char *, int, ...);
-extern int close(int);
-extern int read(int, void *, unsigned int);
-extern int write(int, const void *, unsigned int);
-extern long lseek(int, long, int);
-#endif /* BEN_HACK */
-
-
 /*
 * The Macintosh is a little bit brain-dead sometimes
 */
@@ -731,11 +569,6 @@ errr fd_copy(cptr file, cptr what)
 *
 * Note that we assume that the file should be "binary"
 *
-* XXX XXX XXX The horrible "BEN_HACK" code is for compiling under
-* the CodeWarrior compiler, in which case, for some reason, none
-* of the "O_*" flags are defined, and we must fake the definition
-* of "O_RDONLY", "O_WRONLY", and "O_RDWR" in "A-win-h", and then
-* we must simulate the effect of the proper "open()" call below.
 */
 int fd_make(cptr file, int mode)
 {
@@ -743,19 +576,6 @@ int fd_make(cptr file, int mode)
 
 	/* Hack -- Try to parse the path */
 	if (path_parse(buf, 1024, file)) return ( -1);
-
-#ifdef BEN_HACK
-
-	/* Check for existance */
-	/* if (fd_close(fd_open(file, O_RDONLY | O_BINARY))) return (1); */
-
-	/* Mega-Hack -- Create the file */
-	(void)my_fclose(my_fopen(file, "wb"));
-
-	/* Re-open the file for writing */
-	return (open(buf, O_WRONLY | O_BINARY, mode));
-
-#else /* BEN_HACK */
 
 #ifdef MACH_O_CARBON
 
@@ -778,8 +598,6 @@ return (fdes);
 return (open(buf, O_CREAT | O_EXCL | O_WRONLY | O_BINARY, mode));
 
 #endif /* MACH_O_CARBON */
-
-#endif /* BEN_HACK */
 
 }
 
@@ -909,27 +727,6 @@ errr fd_seek(int fd, huge n)
 
 
 /*
-* Hack -- attempt to truncate a file descriptor
-*/
-errr fd_chop(int fd, huge n)
-{
-	/* XXX XXX */
-	n = n ? n : 0;
-
-	/* Verify the fd */
-	if (fd < 0) return ( -1);
-
-#if defined(SUNOS) || defined(ULTRIX) || defined(NeXT)
-	/* Truncate */
-	ftruncate(fd, n);
-#endif
-
-	/* Success */
-	return (0);
-}
-
-
-/*
 * Hack -- attempt to read data from a file descriptor
 */
 errr fd_read(int fd, char *buf, huge n)
@@ -1009,11 +806,6 @@ errr fd_close(int fd)
 	/* XXX XXX XXX */
 	return (0);
 }
-
-
-#endif /* ACORN */
-
-
 
 
 /*
@@ -1148,7 +940,7 @@ static void trigger_text_to_ascii(char **bufptr, cptr *strptr)
 {
 	char *s = *bufptr;
 	cptr str = *strptr;
-	bool mod_status[MAX_MACRO_MOD];
+	bool_ mod_status[MAX_MACRO_MOD];
 
 	int i, len = 0;
 	int shiftstatus = 0;
@@ -1368,7 +1160,7 @@ void text_to_ascii(char *buf, cptr str)
 }
 
 
-bool trigger_ascii_to_text(char **bufptr, cptr *strptr)
+bool_ trigger_ascii_to_text(char **bufptr, cptr *strptr)
 {
 	char *s = *bufptr;
 	cptr str = *strptr;
@@ -1535,7 +1327,7 @@ void ascii_to_text(char *buf, cptr str)
 /*
 * Determine if any macros have ever started with a given character.
 */
-static bool macro__use[256];
+static bool_ macro__use[256];
 
 
 /*
@@ -1734,7 +1526,7 @@ errr macro_init(void)
 /*
 * Local "need flush" variable
 */
-static bool flush_later = FALSE;
+static bool_ flush_later = FALSE;
 
 
 /*
@@ -1742,14 +1534,14 @@ static bool flush_later = FALSE;
 *
 * Do not match any macros until "ascii 30" is found.
 */
-static bool parse_macro = FALSE;
+static bool_ parse_macro = FALSE;
 
 /*
 * Local variable -- we are inside a "macro trigger"
 *
 * Strip all keypresses until a low ascii value is found.
 */
-static bool parse_under = FALSE;
+static bool_ parse_under = FALSE;
 
 
 /*
@@ -1960,20 +1752,6 @@ static char inkey_aux(void)
 static cptr inkey_next = NULL;
 
 
-#ifdef ALLOW_BORG
-
-/*
-* Mega-Hack -- special "inkey_hack" hook.  XXX XXX XXX
-*
-* This special function hook allows the "Borg" (see elsewhere) to take
-* control of the "inkey()" function, and substitute in fake keypresses.
-*/
-char (*inkey_hack)(int flush_first) = NULL;
-
-#endif /* ALLOW_BORG */
-
-
-
 /*
 * Get a keypress from the user.
 *
@@ -2044,7 +1822,7 @@ char inkey(void)
 
 	char ch = 0;
 
-	bool done = FALSE;
+	bool_ done = FALSE;
 
 	term *old = Term;
 
@@ -2064,22 +1842,6 @@ char inkey(void)
 
 	/* Forget pointer */
 	inkey_next = NULL;
-
-
-#ifdef ALLOW_BORG
-
-	/* Mega-Hack -- Use the special hook */
-	if (inkey_hack && ((ch = (*inkey_hack)(inkey_xtra)) != 0))
-	{
-		/* Cancel the various "global parameters" */
-		inkey_base = inkey_xtra = inkey_flag = inkey_scan = FALSE;
-
-		/* Accept result */
-		macro_recorder_add(ch);
-		return (ch);
-	}
-
-#endif /* ALLOW_BORG */
 
 
 	/* Hack -- handle delayed "flush()" */
@@ -2136,9 +1898,6 @@ char inkey(void)
 
 			/* Mega-Hack -- reset saved flag */
 			character_saved = FALSE;
-
-			/* Mega-Hack -- reset signal counter */
-			signal_count = 0;
 
 			/* Only once */
 			done = TRUE;
@@ -2274,402 +2033,12 @@ char inkey(void)
 	return (ch);
 }
 
-
-
-
-/*
-* We use a global array for all inscriptions to reduce the memory
-* spent maintaining inscriptions.  Of course, it is still possible
-* to run out of inscription memory, especially if too many different
-* inscriptions are used, but hopefully this will be rare.
-*
-* We use dynamic string allocation because otherwise it is necessary
-* to pre-guess the amount of quark activity.  We limit the total
-* number of quarks, but this is much easier to "expand" as needed.
-*
-* Any two items with the same inscription will have the same "quark"
-* index, which should greatly reduce the need for inscription space.
-*
-* Note that "quark zero" is NULL and should not be "dereferenced".
-*/
-
-/*
-* Add a new "quark" to the set of quarks.
-*/
-s16b quark_add(cptr str)
-{
-	int i;
-
-	/* Look for an existing quark */
-	for (i = 1; i < quark__num; i++)
-	{
-		/* Check for equality */
-		if (streq(quark__str[i], str)) return (i);
-	}
-
-	/* Paranoia -- Require room */
-	if (quark__num == QUARK_MAX) return (0);
-
-	/* New maximal quark */
-	quark__num = i + 1;
-
-	/* Add a new quark */
-	quark__str[i] = string_make(str);
-
-	/* Return the index */
-	return (i);
-}
-
-
-/*
-* This function looks up a quark
-*/
-cptr quark_str(s16b i)
-{
-	cptr q;
-
-	/* Verify */
-	if ((i < 0) || (i >= quark__num)) i = 0;
-
-	/* Access the quark */
-	q = quark__str[i];
-
-	/* Return the quark */
-	return (q);
-}
-
-
-
-
-/*
-* Second try for the "message" handling routines.
-*
-* Each call to "message_add(s)" will add a new "most recent" message
-* to the "message recall list", using the contents of the string "s".
-*
-* The messages will be stored in such a way as to maximize "efficiency",
-* that is, we attempt to maximize the number of sequential messages that
-* can be retrieved, given a limited amount of storage space.
-*
-* We keep a buffer of chars to hold the "text" of the messages, not
-* necessarily in "order", and an array of offsets into that buffer,
-* representing the actual messages.  This is made more complicated
-* by the fact that both the array of indexes, and the buffer itself,
-* are both treated as "circular arrays" for efficiency purposes, but
-* the strings may not be "broken" across the ends of the array.
-*
-* The "message_add()" function is rather "complex", because it must be
-* extremely efficient, both in space and time, for use with the Borg.
-*/
-
-
-
-/*
-* How many messages are "available"?
-*/
-s16b message_num(void)
-{
-	int last, next, n;
-
-	/* Extract the indexes */
-	last = message__last;
-	next = message__next;
-
-	/* Handle "wrap" */
-	if (next < last) next += MESSAGE_MAX;
-
-	/* Extract the space */
-	n = (next - last);
-
-	/* Return the result */
-	return (n);
-}
-
-
-
-/*
-* Recall the "text" of a saved message
-*/
-cptr message_str(int age)
-{
-	static char buf[1024];
-	s16b x;
-	s16b o;
-	cptr s;
-
-	/* Forgotten messages have no text */
-	if ((age < 0) || (age >= message_num())) return ("");
-
-	/* Acquire the "logical" index */
-	x = (message__next + MESSAGE_MAX - (age + 1)) % MESSAGE_MAX;
-
-	/* Get the "offset" for the message */
-	o = message__ptr[x];
-
-	/* Access the message text */
-	s = &message__buf[o];
-
-	/* Hack -- Handle repeated messages */
-	if (message__count[x] > 1)
-	{
-		strnfmt(buf, 1024, "%s <%dx>", s, message__count[x]);
-		s = buf;
-	}
-
-	/* Return the message text */
-	return (s);
-}
-
-/*
-* Recall the color of a saved message
-*/
-byte message_color(int age)
-{
-	s16b x;
-	byte color = TERM_WHITE;
-
-	/* Forgotten messages have no text */
-	if ((age < 0) || (age >= message_num())) return (TERM_WHITE);
-
-	/* Acquire the "logical" index */
-	x = (message__next + MESSAGE_MAX - (age + 1)) % MESSAGE_MAX;
-
-	/* Get the "offset" for the message */
-	color = message__color[x];
-
-	/* Return the message text */
-	return (color);
-}
-
-/*
- * Recall the type of a saved message
- */
-byte message_type(int age)
-{
-	s16b x;
-	byte type;
-
-	/* Forgotten messages have no text */
-	if ((age < 0) || (age >= message_num())) return (MESSAGE_NONE);
-
-	/* Acquire the "logical" index */
-	x = (message__next + MESSAGE_MAX - (age + 1)) % MESSAGE_MAX;
-
-	/* Get the "offset" for the message */
-	type = message__type[x];
-
-	/* Return the message text */
-	return (type);
-}
-
-
-
-/*
-* Add a new message, with great efficiency
-*/
-void message_add(byte type, cptr str, byte color)
-{
-	int i, k, x, n;
-	cptr s;
-
-
-	/*** Step 1 -- Analyze the message ***/
-
-	/* Hack -- Ignore "non-messages" */
-	if (!str) return;
-
-	/* Message length */
-	n = strlen(str);
-
-	/* Important Hack -- Ignore "long" messages */
-	if (n >= MESSAGE_BUF / 4) return;
-
-
-	/*** Step 2 -- Handle repeated messages ***/
-
-	/* Acquire the "logical" last index */
-	x = (message__next + MESSAGE_MAX - 1) % MESSAGE_MAX;
-
-	/* Get the last message text */
-	s = &message__buf[message__ptr[x]];
-
-	/* Last message repeated? */
-	if (streq(str, s))
-	{
-		/* Increase the message count */
-		message__count[x]++;
-
-		/* Success */
-		return;
-	}
-
-
-	/*** Step 3 -- Attempt to optimize ***/
-
-	/* Limit number of messages to check */
-	k = message_num() / 4;
-
-	/* Limit number of messages to check */
-	if (k > MESSAGE_MAX / 32) k = MESSAGE_MAX / 32;
-
-	/* Check the last few messages (if any to count) */
-	for (i = message__next; k; k--)
-	{
-		u16b q;
-
-		cptr old;
-
-		/* Back up and wrap if needed */
-		if (i-- == 0) i = MESSAGE_MAX - 1;
-
-		/* Stop before oldest message */
-		if (i == message__last) break;
-
-		/* Extract "distance" from "head" */
-		q = (message__head + MESSAGE_BUF - message__ptr[i]) % MESSAGE_BUF;
-
-		/* Do not optimize over large distance */
-		if (q > MESSAGE_BUF / 2) continue;
-
-		/* Access the old string */
-		old = &message__buf[message__ptr[i]];
-
-		/* Compare */
-		if (!streq(old, str)) continue;
-
-		/* Get the next message index, advance */
-		x = message__next++;
-
-		/* Handle wrap */
-		if (message__next == MESSAGE_MAX) message__next = 0;
-
-		/* Kill last message if needed */
-		if (message__next == message__last) message__last++;
-
-		/* Handle wrap */
-		if (message__last == MESSAGE_MAX) message__last = 0;
-
-		/* Assign the starting address */
-		message__ptr[x] = message__ptr[i];
-		message__color[x] = color;
-		message__type[x] = type;
-		message__count[x] = 1;
-
-		/* Success */
-		return;
-	}
-
-
-	/*** Step 4 -- Ensure space before end of buffer ***/
-
-	/* Kill messages and Wrap if needed */
-	if (message__head + n + 1 >= MESSAGE_BUF)
-	{
-		/* Kill all "dead" messages */
-		for (i = message__last; TRUE; i++)
-		{
-			/* Wrap if needed */
-			if (i == MESSAGE_MAX) i = 0;
-
-			/* Stop before the new message */
-			if (i == message__next) break;
-
-			/* Kill "dead" messages */
-			if (message__ptr[i] >= message__head)
-			{
-				/* Track oldest message */
-				message__last = i + 1;
-			}
-		}
-
-		/* Wrap "tail" if needed */
-		if (message__tail >= message__head) message__tail = 0;
-
-		/* Start over */
-		message__head = 0;
-	}
-
-
-	/*** Step 5 -- Ensure space before next message ***/
-
-	/* Kill messages if needed */
-	if (message__head + n + 1 > message__tail)
-	{
-		/* Grab new "tail" */
-		message__tail = message__head + n + 1;
-
-		/* Advance tail while possible past first "nul" */
-		while (message__buf[message__tail - 1]) message__tail++;
-
-		/* Kill all "dead" messages */
-		for (i = message__last; TRUE; i++)
-		{
-			/* Wrap if needed */
-			if (i == MESSAGE_MAX) i = 0;
-
-			/* Stop before the new message */
-			if (i == message__next) break;
-
-			/* Kill "dead" messages */
-			if ((message__ptr[i] >= message__head) &&
-			                (message__ptr[i] < message__tail))
-			{
-				/* Track oldest message */
-				message__last = i + 1;
-			}
-		}
-	}
-
-
-	/*** Step 6 -- Grab a new message index ***/
-
-	/* Get the next message index, advance */
-	x = message__next++;
-
-	/* Handle wrap */
-	if (message__next == MESSAGE_MAX) message__next = 0;
-
-	/* Kill last message if needed */
-	if (message__next == message__last) message__last++;
-
-	/* Handle wrap */
-	if (message__last == MESSAGE_MAX) message__last = 0;
-
-
-
-	/*** Step 7 -- Insert the message text ***/
-
-	/* Assign the starting address */
-	message__ptr[x] = message__head;
-	message__color[x] = color;
-	message__type[x] = type;
-	message__count[x] = 1;
-
-	/* Append the new part of the message */
-	for (i = 0; i < n; i++)
-	{
-		/* Copy the message */
-		message__buf[message__head + i] = str[i];
-	}
-
-	/* Terminate */
-	message__buf[message__head + i] = '\0';
-
-	/* Advance the "head" pointer */
-	message__head += n + 1;
-}
-
-
-
 /*
 * Hack -- flush
 */
 static void msg_flush(int x)
 {
 	byte a = TERM_L_BLUE;
-
-	/* Hack -- fake monochrome */
-	if (!use_color) a = TERM_WHITE;
 
 	/* Pause for response */
 	Term_putstr(x, 0, -1, a, "-more-");
@@ -2784,7 +2153,7 @@ void cmsg_print(byte color, cptr msg)
 
 
 	/* Memorize the message */
-	if (character_generated) message_add(MESSAGE_MSG, msg, color);
+	if (character_generated) message_add(msg, color);
 
 	/* Handle "auto_more" */
 	if (auto_more)
@@ -2969,9 +2338,6 @@ void cmsg_format(byte color, cptr fmt, ...)
 */
 void c_put_str(byte attr, cptr str, int row, int col)
 {
-	/* Hack -- fake monochrome */
-	if (!use_color) attr = TERM_WHITE;
-
 	/* Position cursor, Dump the attr/text */
 	Term_putstr(col, row, -1, attr, str);
 }
@@ -2993,9 +2359,6 @@ void put_str(cptr str, int row, int col)
 */
 void c_prt(byte attr, cptr str, int row, int col)
 {
-	/* Hack -- fake monochrome */
-	if (!use_color) attr = TERM_WHITE;
-
 	/* Clear line, position cursor */
 	Term_erase(col, row, 255);
 
@@ -3045,11 +2408,8 @@ void text_out_to_screen(byte a, cptr str)
 	/* Obtain the cursor */
 	(void)Term_locate(&x, &y);
 
-	/* Use special wrapping boundary? */
-	if ((text_out_wrap > 0) && (text_out_wrap < wid))
-		wrap = text_out_wrap;
-	else
-		wrap = wid;
+	/* Wrapping boundary */
+	wrap = wid;
 
 	/* Process the string */
 	for (s = str; *s; s++)
@@ -3136,8 +2496,7 @@ void text_out_to_screen(byte a, cptr str)
  * Hook function for text_out(). Make sure that text_out_file points
  * to an open text-file.
  *
- * Long lines will be wrapped at text_out_wrap, or at column 75 if that
- * is not set; or at a newline character.
+ * Long lines will be wrapped at column 75 ; or at a newline character.
  *
  * You must be careful to end all file output with a newline character
  * to "flush" the stored line position.
@@ -3148,7 +2507,7 @@ void text_out_to_file(byte a, cptr str)
 	static int pos = 0;
 
 	/* Wrap width */
-	int wrap = (text_out_wrap ? text_out_wrap : 75);
+	int wrap = 75;
 
 	/* Current location within "str" */
 	cptr s = str;
@@ -3302,7 +2661,7 @@ static char complete_buf[100];
 static int complete_command(char *buf, int clen, int mlen)
 {
 	int i, j = 1, max = clen;
-	bool gotone = FALSE;
+	bool_ gotone = FALSE;
 
 	/* Forget the characters after the end of the string. */
 	complete_buf[clen] = '\0';
@@ -3351,8 +2710,8 @@ static int complete_command(char *buf, int clen, int mlen)
 * ESCAPE clears the buffer and the window and returns FALSE.
 * RETURN accepts the current buffer contents and returns TRUE.
 */
-bool askfor_aux_complete = FALSE;
-bool askfor_aux(char *buf, int len)
+bool_ askfor_aux_complete = FALSE;
+bool_ askfor_aux(char *buf, int len)
 {
 	int y, x;
 
@@ -3360,21 +2719,22 @@ bool askfor_aux(char *buf, int len)
 
 	int k = 0;
 
-	bool done = FALSE;
+        int wid, hgt;
+
+	bool_ done = FALSE;
 
 
 	/* Locate the cursor */
 	Term_locate(&x, &y);
 
-
-	/* Paranoia -- check len */
-	if (len < 1) len = 1;
+        /* Get terminal size */
+        Term_get_size(&wid, &hgt);
 
 	/* Paranoia -- check column */
-	if ((x < 0) || (x >= 80)) x = 0;
+	if ((x < 0) || (x >= wid)) x = 0;
 
 	/* Restrict the length */
-	if (x + len > 80) len = 80 - x;
+	if (x + len > wid) len = wid - x;
 
 
 	/* Paranoia -- Clip the default entry */
@@ -3477,9 +2837,9 @@ bool askfor_aux(char *buf, int len)
 *
 * We clear the input, and return FALSE, on "ESCAPE".
 */
-bool get_string(cptr prompt, char *buf, int len)
+bool_ get_string(cptr prompt, char *buf, int len)
 {
-	bool res;
+	bool_ res;
 
 	/* Paranoia XXX XXX XXX */
 	msg_print(NULL);
@@ -3505,7 +2865,7 @@ bool get_string(cptr prompt, char *buf, int len)
 *
 * Note that "[y/n]" is appended to the prompt.
 */
-bool get_check(cptr prompt)
+bool_ get_check(cptr prompt)
 {
 	int i;
 
@@ -3548,7 +2908,7 @@ bool get_check(cptr prompt)
 *
 * Returns TRUE unless the character is "Escape"
 */
-bool get_com(cptr prompt, char *command)
+bool_ get_com(cptr prompt, char *command)
 {
 	/* Paranoia XXX XXX XXX */
 	msg_print(NULL);
@@ -3601,8 +2961,6 @@ s32b get_quantity(cptr prompt, s32b max)
 		return (amt);
 	}
 
-#ifdef ALLOW_REPEAT /* TNB */
-
 	/* Get the item index */
 	if ((max != 1) && repeat_pull(&aamt))
 	{
@@ -3618,13 +2976,11 @@ s32b get_quantity(cptr prompt, s32b max)
 		return (amt);
 	}
 
-#endif /* ALLOW_REPEAT -- TNB */
-
 	/* Build a prompt if needed */
 	if (!prompt)
 	{
 		/* Build a prompt */
-		sprintf(tmp, "Quantity (1-%ld): ", max);
+		sprintf(tmp, "Quantity (1-%ld): ", (long int) max);
 
 		/* Use that prompt */
 		prompt = tmp;
@@ -3635,7 +2991,7 @@ s32b get_quantity(cptr prompt, s32b max)
 	amt = 1;
 
 	/* Build the default */
-	sprintf(buf, "%ld", amt);
+	sprintf(buf, "%ld", (long int) amt);
 
 	/* Ask for a quantity */
 	if (!get_string(prompt, buf, 9)) return (0);
@@ -3652,11 +3008,8 @@ s32b get_quantity(cptr prompt, s32b max)
 	/* Enforce the minimum */
 	if (amt < 0) amt = 0;
 
-#ifdef ALLOW_REPEAT /* TNB */
 
 	if (amt) repeat_push(amt);
-
-#endif /* ALLOW_REPEAT -- TNB */
 
 	/* Return the result */
 	return (amt);
@@ -3668,10 +3021,9 @@ s32b get_quantity(cptr prompt, s32b max)
 */
 void pause_line(int row)
 {
-	int i;
 	prt("", row, 0);
 	put_str("[Press any key to continue]", row, 23);
-	i = inkey();
+	inkey();
 	prt("", row, 0);
 }
 
@@ -3693,7 +3045,7 @@ char request_command_ignore_keymaps[MAX_IGNORE_KEYMAPS];
 * Mega-Hack -- flag set by do_cmd_{inven,equip}() to allow keymaps in
 * auto-command mode.
 */
-bool request_command_inven_mode = FALSE;
+bool_ request_command_inven_mode = FALSE;
 
 
 /*
@@ -3727,18 +3079,8 @@ void request_command(int shopping)
 	cptr act;
 
 
-	/* Roguelike */
-	if (rogue_like_commands)
-	{
-		mode = KEYMAP_MODE_ROGUE;
-	}
-
-	/* Original */
-	else
-	{
-		mode = KEYMAP_MODE_ORIG;
-	}
-
+	/* Keymap mode */
+	mode = get_keymap_mode();
 
 	/* No command yet */
 	command_cmd = 0;
@@ -3874,7 +3216,7 @@ void request_command(int shopping)
 			if ((cmd == ' ') || (cmd == '\n') || (cmd == '\r'))
 			{
 				/* Get a real command */
-				bool temp = get_com("Command: ", &cmd_char);
+				bool_ temp = get_com("Command: ", &cmd_char);
 				cmd = cmd_char;
 
 				if (!temp)
@@ -4010,7 +3352,7 @@ void request_command(int shopping)
 /*
  * Check a char for "vowel-hood"
  */
-bool is_a_vowel(int ch)
+bool_ is_a_vowel(int ch)
 {
 	switch (ch)
 	{
@@ -4029,65 +3371,6 @@ bool is_a_vowel(int ch)
 
 	return (FALSE);
 }
-
-
-
-#if 0
-
-/*
-* Replace the first instance of "target" in "buf" with "insert"
-* If "insert" is NULL, just remove the first instance of "target"
-* In either case, return TRUE if "target" is found.
-*
-* XXX Could be made more efficient, especially in the
-* case where "insert" is smaller than "target".
-*/
-static bool insert_str(char *buf, cptr target, cptr insert)
-{
-	int i, len;
-	int	b_len, t_len, i_len;
-
-	/* Attempt to find the target (modify "buf") */
-	buf = strstr(buf, target);
-
-	/* No target found */
-	if (!buf) return (FALSE);
-
-	/* Be sure we have an insertion string */
-	if (!insert) insert = "";
-
-	/* Extract some lengths */
-	t_len = strlen(target);
-	i_len = strlen(insert);
-	b_len = strlen(buf);
-
-	/* How much "movement" do we need? */
-	len = i_len - t_len;
-
-	/* We need less space (for insert) */
-	if (len < 0)
-	{
-		for (i = t_len; i < b_len; ++i) buf[i + len] = buf[i];
-	}
-
-	/* We need more space (for insert) */
-	else if (len > 0)
-	{
-		for (i = b_len - 1; i >= t_len; --i) buf[i + len] = buf[i];
-	}
-
-	/* If movement occured, we need a new terminator */
-	if (len) buf[b_len + len] = '\0';
-
-	/* Now copy the insertion string */
-	for (i = 0; i < i_len; ++i) buf[i] = insert[i];
-
-	/* Successful operation */
-	return (TRUE);
-}
-
-
-#endif
 
 
 /*
@@ -4116,17 +3399,8 @@ int get_keymap_dir(char ch)
 	}
 	else
 	{
-		/* Roguelike */
-		if (rogue_like_commands)
-		{
-			mode = KEYMAP_MODE_ROGUE;
-		}
-
-		/* Original */
-		else
-		{
-			mode = KEYMAP_MODE_ORIG;
-		}
+		/* Keymap mode */
+		mode = get_keymap_mode();
 
 		/* Extract the action (if any) */
 		act = keymap_act[mode][(byte)(ch)];
@@ -4150,8 +3424,6 @@ int get_keymap_dir(char ch)
 	return (d);
 }
 
-
-#ifdef ALLOW_REPEAT /* TNB */
 
 #define REPEAT_MAX		20
 
@@ -4178,7 +3450,7 @@ void repeat_push(int what)
 }
 
 
-bool repeat_pull(int *what)
+bool_ repeat_pull(int *what)
 {
 	/* All out of keys */
 	if (repeat__idx == repeat__cnt) return (FALSE);
@@ -4228,7 +3500,6 @@ void repeat_check(void)
 	}
 }
 
-#endif /* ALLOW_REPEAT -- TNB */
 
 /*
  * Read a number at a specific location on the screen
@@ -4240,7 +3511,7 @@ u32b get_number(u32b def, u32b max, int y, int x, char *cmd)
 	u32b res = def;
 
 	/* Player has not typed anything yet */
-	bool no_keys = TRUE;
+	bool_ no_keys = TRUE;
 
 	/* Begin the input with default */
 	prt(format("%lu", def), y, x);
@@ -4449,7 +3720,7 @@ s32b bst(s32b what, s32b t)
 	}
 }
 
-cptr get_month_name(int day, bool full, bool compact)
+cptr get_month_name(int day, bool_ full, bool_ compact)
 {
 	int i = 8;
 	static char buf[40];
@@ -4468,7 +3739,7 @@ cptr get_month_name(int day, bool full, bool compact)
 		{
 			char buf2[20];
 
-			sprintf(buf2, get_day(day + 1));
+			sprintf(buf2, "%s", get_day(day + 1));
 			if (full) sprintf(buf, "%s (%s day)", month_name[i], buf2);
 			else sprintf(buf, "%s", month_name[i]);
 			break;
@@ -4479,8 +3750,8 @@ cptr get_month_name(int day, bool full, bool compact)
 			char buf2[20];
 			char buf3[20];
 
-			sprintf(buf2, get_day(day + 1 - month_day[i]));
-			sprintf(buf3, get_day(day + 1));
+			sprintf(buf2, "%s", get_day(day + 1 - month_day[i]));
+			sprintf(buf3, "%s", get_day(day + 1));
 
 			if (full) sprintf(buf, "%s day of %s (%s day)", buf2, month_name[i], buf3);
 			else if (compact) sprintf(buf, "%s day of %s", buf2, month_name[i]);
@@ -4522,107 +3793,6 @@ cptr get_player_race_name(int pr, int ps)
 
 	return (buf);
 }
-
-#ifdef SUPPORT_GAMMA
-
-/* Table of gamma values */
-byte gamma_table[256];
-
-/* Table of ln(x / 256) * 256 for x going from 0 -> 255 */
-static const s16b gamma_helper[256] =
-{
-	0, -1420, -1242, -1138, -1065, -1007, -961, -921, -887, -857, -830,
-	-806, -783, -762, -744, -726, -710, -694, -679, -666, -652, -640,
-	-628, -617, -606, -596, -586, -576, -567, -577, -549, -541, -532,
-	-525, -517, -509, -502, -495, -488, -482, -475, -469, -463, -457,
-	-451, -455, -439, -434, -429, -423, -418, -413, -408, -403, -398,
-	-394, -389, -385, -380, -376, -371, -367, -363, -359, -355, -351,
-	-347, -343, -339, -336, -332, -328, -325, -321, -318, -314, -311,
-	-308, -304, -301, -298, -295, -291, -288, -285, -282, -279, -276,
-	-273, -271, -268, -265, -262, -259, -257, -254, -251, -248, -246,
-	-243, -241, -238, -236, -233, -231, -228, -226, -223, -221, -219,
-	-216, -214, -212, -209, -207, -205, -203, -200, -198, -196, -194,
-	-192, -190, -188, -186, -184, -182, -180, -178, -176, -174, -172,
-	-170, -168, -166, -164, -162, -160, -158, -156, -155, -153, -151,
-	-149, -147, -146, -144, -142, -140, -139, -137, -135, -134, -132,
-	-130, -128, -127, -125, -124, -122, -120, -119, -117, -116, -114,
-	-112, -111, -109, -108, -106, -105, -103, -102, -100, -99, -97, -96,
-	-95, -93, -92, -90, -89, -87, -86, -85, -83, -82, -80, -79, -78,
-	-76, -75, -74, -72, -71, -70, -68, -67, -66, -65, -63, -62, -61,
-	-59, -58, -57, -56, -54, -53, -52, -51, -50, -48, -47, -46, -45,
-	-44, -42, -41, -40, -39, -38, -37, -35, -34, -33, -32, -31, -30,
-	-29, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16,
-	-14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1
-};
-
-
-/*
- * Build the gamma table so that floating point isn't needed.
- *
- * Note gamma goes from 0->256.  The old value of 100 is now 128.
- */
-void build_gamma_table(int gamma)
-{
-	int i, n;
-
-	/*
-	 * value is the current sum.
-	 * diff is the new term to add to the series.
-	 */
-	long value, diff;
-
-	/* Hack - convergence is bad in these cases. */
-	gamma_table[0] = 0;
-	gamma_table[255] = 255;
-
-	for (i = 1; i < 255; i++)
-	{
-		/*
-		 * Initialise the Taylor series
-		 *
-		 * value and diff have been scaled by 256
-		 */
-		n = 1;
-		value = 256 * 256;
-		diff = ((long)gamma_helper[i]) * (gamma - 256);
-
-		while (diff)
-		{
-			value += diff;
-			n++;
-
-			/*
-			 * Use the following identiy to calculate the gamma table.
-			 * exp(x) = 1 + x + x^2/2 + x^3/(2*3) + x^4/(2*3*4) +...
-			 *
-			 * n is the current term number.
-			 *
-			 * The gamma_helper array contains a table of
-			 * ln(x/256) * 256
-			 * This is used because a^b = exp(b*ln(a))
-			 *
-			 * In this case:
-			 * a is i / 256
-			 * b is gamma.
-			 *
-			 * Note that everything is scaled by 256 for accuracy,
-			 * plus another factor of 256 for the final result to
-			 * be from 0-255.  Thus gamma_helper[] * gamma must be
-			 * divided by 256*256 each itteration, to get back to
-			 * the original power series.
-			 */
-			diff = (((diff / 256) * gamma_helper[i]) * (gamma - 256)) / (256 * n);
-		}
-
-		/*
-		 * Store the value in the table so that the
-		 * floating point pow function isn't needed.
-		 */
-		gamma_table[i] = ((long)(value / 256) * i) / 256;
-	}
-}
-
-#endif /* SUPPORT_GAMMA */
 
 /*
  * Ask to select an item in a list
@@ -4703,12 +3873,15 @@ int ask_menu(cptr ask, char **items, int max)
 /*
  * Determine if string "t" is a prefix of string "s"
  */
-bool prefix(cptr s, cptr t)
+bool_ prefix(cptr s, cptr t)
 {
 	/* Paranoia */
 	if (!s || !t)
 	{
-		if (alert_failure) message_add(MESSAGE_MSG, "prefix() called with null argument!", TERM_RED);
+		if (alert_failure)
+		{
+			message_add("prefix() called with null argument!", TERM_RED);
+		}
 		return FALSE;
 	}
 
@@ -4721,19 +3894,6 @@ bool prefix(cptr s, cptr t)
 
 	/* Matched, we have a prefix */
 	return (TRUE);
-}
-
-/*
- * Rescale a value
- */
-s32b value_scale(int value, int vmax, int max, int min)
-{
-	s32b full_max = max - min;
-
-	value = (value * full_max) / vmax;
-	value += min;
-
-	return value;
 }
 
 /*
@@ -4788,7 +3948,7 @@ void display_list(int y, int x, int h, int w, cptr title, cptr *list, int max, i
 /*
  * Creates an input box
  */
-bool input_box(cptr text, int y, int x, char *buf, int max)
+bool_ input_box(cptr text, int y, int x, char *buf, int max)
 {
 	int smax = strlen(text);
 
@@ -4836,15 +3996,15 @@ void scansubdir(cptr dir)
 /*
  * Timers
  */
-timer_type *new_timer(cptr callback, s32b delay)
+timer_type *new_timer(void (*callback)(), s32b delay)
 {
-	timer_type *t_ptr;
+	timer_type *t_ptr = NULL;
 
 	MAKE(t_ptr, timer_type);
 	t_ptr->next = gl_timers;
 	gl_timers = t_ptr;
 
-	t_ptr->callback = string_make(callback);
+	t_ptr->callback = callback;
 	t_ptr->delay = delay;
 	t_ptr->countdown = delay;
 	t_ptr->enabled = FALSE;
@@ -4865,9 +4025,21 @@ void del_timer(timer_type *t_ptr)
 			gl_timers = t_ptr->next;
 		else
 			old->next = t_ptr->next;
-		string_free(t_ptr->callback);
+
 		FREE(t_ptr, timer_type);
 	}
 	else
 		cmsg_print(TERM_VIOLET, "Unknown timer!");
+}
+
+int get_keymap_mode()
+{
+	if (rogue_like_commands)
+	{
+		return KEYMAP_MODE_ROGUE;
+	}
+	else
+	{
+		return KEYMAP_MODE_ORIG;
+	}
 }
